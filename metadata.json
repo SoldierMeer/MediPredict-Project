@@ -1,0 +1,13 @@
+{
+  "name": "MediPredict",
+  "description": "AI-powered medication compliance and risk prediction system for patients and caregivers.",
+  "requestFramePermissions": [
+    "notifications"
+  ],
+  "majorCapabilities": [
+    "Medication Tracking",
+    "AI Risk Analytics",
+    "Caregiver Monitoring",
+    "Real-time History"
+  ]
+}
