@@ -27,54 +27,54 @@ const LoginScreen: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
   
-    // 1. Prepare data based on mode
+    // 1. Align payload with your new MongoDB User Schema
     const payload = isLogin
       ? { email, password }
-      : { email, password, name, phone, dob, role: 'unassigned' };
+      : { 
+          name, 
+          email, 
+          password, 
+          phoneNumber: phone, // Changed 'phone' to 'phoneNumber' to match backend
+          dob, 
+          gender: 'male' // Or link to a gender state if you have one
+        };
   
-    const endpoint = isLogin ? '/auth/login' : '/auth/signup';
+    // 2. Update to your new Node.js API routes
+    const endpoint = isLogin ? '/auth/login' : '/auth/register';
   
     try {
       const response = await api.post(endpoint, payload);
   
       if (response.status === 200 || response.status === 201) {
-        // ✅ Destructure the new fields from your backend response
-        const { 
-          role, 
-          user_id, 
-          link_status, 
-          patient_code, 
-          name: resName, 
-          email: resEmail, 
-          phone: resPhone,
-          dob: resDob
-        } = response.data;
+        // 3. Handle Login Response (Token + User Data)
+        if (isLogin) {
+          const { token, user } = response.data;
   
-        // ✅ Pass all 7 arguments to the context login function
-        login(
-          role, 
-          user_id, 
-          link_status || 'none', 
-          patient_code || null,
-          resName || name,   // Fallback to local state if backend didn't send it
-          resEmail || email, 
-          resPhone || phone,
-          resDob || dob
-        );
+          // ✅ Save the JWT for Adherence Telemetry
+          localStorage.setItem('med_app_token', token);
   
-        if (!isLogin) {
-          navigate('/select-role');
+          // ✅ Pass data to your existing context
+          login(
+            'patient',            // Default role for this flow
+            user.id,             // user_id
+            'none',              // link_status
+            user.patientCode,    // patient_code from MongoDB
+            user.name, 
+            email, 
+            phone, 
+            dob
+          );
+  
+          navigate('/patient/home');
         } else {
-          if (role === 'patient') navigate('/patient/home');
-          else if (role === 'caregiver') navigate('/caregiver/dashboard');
-          else navigate('/select-role');
+          // 4. Handle Successful Registration
+          alert("Registration successful! Please login.");
+          setIsLogin(true); // Toggle to login mode
         }
       }
     } catch (err: any) {
-      const rawDetail = err.response?.data?.detail;
-      const errorMsg = Array.isArray(rawDetail)
-        ? rawDetail[0]?.msg
-        : (typeof rawDetail === 'string' ? rawDetail : "Authentication failed.");
+      // 5. Adapt error handling for your Node.js/Express backend
+      const errorMsg = err.response?.data?.error || "Authentication failed.";
       alert(errorMsg);
     } finally {
       setIsLoading(false);
