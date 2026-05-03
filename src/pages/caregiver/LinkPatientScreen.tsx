@@ -14,42 +14,51 @@ const LinkPatientScreen = () => {
     const handleRefreshStatus = async () => {
         setIsLoading(true);
         try {
-          const res = await api.get(`/auth/links/status/${userId}`);
-          console.log("Status Check Response:", res.data.status); // <--- DEBUG THIS
-      
-          const newStatus = res.data.status;
-          
-          // Update the context. This should trigger the App.tsx redirect.
-          setLinkStatus(newStatus); 
-      
-          if (newStatus === 'accepted') {
-            alert("Connection Approved! Redirecting...");
-            navigate('/caregiver/dashboard');
-            // App.tsx should handle the redirect automatically now.
-          } else if (newStatus === 'pending') {
-            alert("Still pending. Ask your patient to check their Home screen.");
-          } else {
-            alert("No request found. Please try linking again.");
-          }
+            const res = await api.get('/requests/status/check');
+            console.log("Status Check Response:", res.data.status); // <--- DEBUG THIS
+
+            const newStatus = res.data.status;
+
+            // Update the context. This should trigger the App.tsx redirect.
+            setLinkStatus(newStatus);
+
+            if (newStatus === 'accepted') {
+                alert("Connection Approved! Redirecting...");
+                navigate('/caregiver/dashboard');
+                // App.tsx should handle the redirect automatically now.
+            } else if (newStatus === 'pending') {
+                alert("Still pending. Ask your patient to check their Home screen.");
+            } else {
+                alert("No request found. Please try linking again.");
+            }
         } catch (err) {
-          console.error("Status Check Error:", err);
+            console.error("Status Check Error:", err);
         } finally {
-          setIsLoading(false);
+            setIsLoading(false);
         }
-      };
+    };
+
+    // LinkPatientScreen.tsx
 
     const handleSendRequest = async () => {
+        // ✅ Safety check: Don't send empty requests
+        if (!patientIdInput.trim()) {
+            alert("Please enter a Patient Code.");
+            return;
+        }
+
         try {
-            await api.post("/auth/links/request", {
-                caregiver_id: userId,
-                patient_code: patientIdInput.toUpperCase()
+            // ✅ FIX: Use 'patientIdInput' (your state) instead of 'patientCode'
+            // Wrap it in an object key that matches your controller (patientCode)
+            await api.post('/requests/send', {
+                patientCode: patientIdInput.trim()
             });
 
-            // IMPORTANT: Update local state so the UI changes to the 'pending' view
             setLinkStatus("pending");
             alert("Request sent! Please ask your patient to accept the link in their profile.");
         } catch (err: any) {
-            const msg = err.response?.data?.detail || "Could not find patient.";
+            // Standardize error message retrieval
+            const msg = err.response?.data?.message || "Could not find patient.";
             alert(msg);
         }
     };

@@ -5,6 +5,8 @@ import { Search, Plus, Pill, Edit2, Trash2, CheckCircle2, Clock, X, Info, Hash, 
 import { type Medication } from '../../data/mockData';
 import { cn } from '../../utils/cn';
 import { useMeds } from '../../context/MedicationContext';
+import { useUser } from '../../context/UserContext';
+import api from '../../utils/api';
 
 const getMedicationDayLabel = (med: Medication) => {
   const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -25,24 +27,24 @@ const convertTimeTo24 = (time12h: string) => {
 };
 
 const MedicationList: React.FC = () => {
+  const { userId } = useUser(); //
+  const [meds, setMeds] = useState<any[]>([]); //
+  const [loading, setLoading] = useState(true); //
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
   const [editingId, setEditingId] = useState<string | null>(null);
-
-  // ✅ 1. Initialize from the SAME localStorage key as PatientHome
-  const { medications, setMedications } = useMeds();
 
   const [newMedForm, setNewMedForm] = useState({
     name: '',
     dosage: '',
     quantity: '1',
     unit: 'Pill',
-    time: '',
+    time: '08:00',
     frequency: 'Daily',
     selectedDays: [] as string[],
     category: 'General',
-    customCategory: '' // ✅ Added this
+    customCategory: ''
   });
 
   const isFormInvalid =
@@ -50,32 +52,38 @@ const MedicationList: React.FC = () => {
     !newMedForm.quantity ||
     !newMedForm.time ||
     (newMedForm.frequency === 'Custom' && newMedForm.selectedDays.length === 0) ||
-    (newMedForm.category === 'Other' && !newMedForm.customCategory.trim()); // ✅ Required if "Other"
+    (newMedForm.category === 'Other' && !newMedForm.customCategory.trim());
 
   const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // ✅ 1. Fetch Medications from MongoDB Atlas
+  useEffect(() => {
+    const fetchMeds = async () => {
+      if (!userId) return;
+      try {
+        const res = await api.get(`/medications/patient/${userId}`); //
+        setMeds(res.data);
+      } catch (err) {
+        console.error("Cloud sync failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMeds();
+  }, [userId]);
 
   const toggleDay = (day: string) => {
     setNewMedForm(prev => {
       const isAlreadySelected = prev.selectedDays.includes(day);
-
-      // 1. Add or remove the day
       const updatedDays = isAlreadySelected
         ? prev.selectedDays.filter(d => d !== day)
         : [...prev.selectedDays, day];
-
-      // 2. SORT them based on their index in daysOfWeek
       const sortedDays = updatedDays.sort((a, b) =>
         daysOfWeek.indexOf(a) - daysOfWeek.indexOf(b)
       );
-
       return { ...prev, selectedDays: sortedDays };
     });
   };
-
-  // ✅ 2. Sync changes back to storage (important for Delete/Add)
-  useEffect(() => {
-    localStorage.setItem('mp_daily_meds', JSON.stringify(medications));
-  }, [medications]);
 
   const formatTimeToAMPM = (time24: string) => {
     if (!time24) return "";
@@ -86,26 +94,24 @@ const MedicationList: React.FC = () => {
     return `${displayHours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
   };
 
-  const handleSaveMedication = () => {
-    // Validation checks
-    if (!newMedForm.name || !newMedForm.time) {
-      alert("Please enter the medicine name and a reminder time.");
-      return;
+  // ✅ 2. Handle Status Toggling (Marking as Taken)
+  const handleToggleTaken = async (med: any) => {
+    try {
+      const res = await api.patch(`/medications/${med._id}`, { 
+        isTaken: !med.isTaken,
+        status: !med.isTaken ? 'taken' : 'upcoming'
+      }); //
+      setMeds(prev => prev.map(m => m._id === med._id ? res.data : m));
+    } catch (err) {
+      alert("Status update failed");
     }
-    if (newMedForm.frequency === 'Custom' && newMedForm.selectedDays.length === 0) {
-      alert("Please select at least one day for your Custom schedule.");
-      return;
-    }
+  };
 
-    const finalCategory = newMedForm.category === 'Other'
-      ? newMedForm.customCategory
-      : newMedForm.category;
+  // ✅ 3. Save or Update Medication in MongoDB
+  const handleSaveMedication = async () => {
+    const finalCategory = newMedForm.category === 'Other' ? newMedForm.customCategory : newMedForm.category;
+    const finalFrequency = newMedForm.frequency === 'Custom' ? newMedForm.selectedDays.join(', ') : newMedForm.frequency;
 
-    const finalFrequency = newMedForm.frequency === 'Custom'
-      ? newMedForm.selectedDays.join(', ')
-      : newMedForm.frequency;
-
-    // Prepare the data object
     const medData = {
       name: newMedForm.name,
       dosage: newMedForm.dosage,
@@ -114,49 +120,43 @@ const MedicationList: React.FC = () => {
       category: finalCategory,
       frequency: finalFrequency,
       selectedDays: newMedForm.selectedDays,
-      isTaken: false,
-      status: 'upcoming' as const,
-      // isArchived should remain what it was if editing, or false if new
+      patientId: userId // ✅ CRITICAL: This MUST be present and not null
     };
 
-    if (editingId) {
-      // UPDATE EXISTING
-      setMedications(prev => prev.map(m =>
-        m.id === editingId ? { ...m, ...medData } : m
-      ));
-    } else {
-      // ADD NEW
-      const newEntry: Medication = {
-        ...medData,
-        id: Math.random().toString(36).substr(2, 9),
-        isArchived: false, // New meds are never archived by default
-        snoozeUntil: null,
-        snoozeCount: 0
-      };
-      setMedications(prev => [...prev, newEntry]);
-    }
-
-    // Reset everything
-    setIsAddModalOpen(false);
-    setEditingId(null);
-    setNewMedForm({
-      name: '', dosage: '', quantity: '1', unit: 'Pill',
-      time: '', frequency: 'Daily', selectedDays: [],
-      category: 'General', customCategory: ''
-    });
-  };
-
-  // ✅ 3. Handle Deletion
-  const handleDelete = (id: string) => {
-    if (window.confirm("Are you sure you want to remove this medication?")) {
-      setMedications(prev => prev.filter(m => m.id !== id));
+    try {
+      if (editingId) {
+        const res = await api.patch(`/medications/${editingId}`, medData); //
+        setMeds(prev => prev.map(m => m._id === editingId ? res.data : m));
+      } else {
+        const res = await api.post('/medications', medData); //
+        setMeds(prev => [...prev, res.data]);
+      }
+      setIsAddModalOpen(false);
+      setEditingId(null);
+      setNewMedForm({
+        name: '', dosage: '', quantity: '1', unit: 'Pill',
+        time: '08:00', frequency: 'Daily', selectedDays: [],
+        category: 'General', customCategory: ''
+      });
+    } catch (err) { 
+      alert("Failed to save to cloud storage.");
     }
   };
 
-  const handleEdit = (med: Medication) => {
-    setEditingId(med.id);
+  // ✅ 4. Cloud Deletion
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Are you sure you want to remove this medication permanently?")) {
+      try {
+        await api.delete(`/medications/${id}`); //
+        setMeds(prev => prev.filter(m => m._id !== id));
+      } catch (err) {
+        alert("Delete failed.");
+      }
+    }
+  };
 
-    // Check if the category is one of our presets
+  const handleEdit = (med: any) => {
+    setEditingId(med._id);
     const presets = ['General', 'Heart', 'Antibiotic', 'Analgesic', 'Supplement'];
     const isOther = !presets.includes(med.category);
 
@@ -165,7 +165,7 @@ const MedicationList: React.FC = () => {
       dosage: med.dosage,
       quantity: med.quantity.split(' ')[0],
       unit: med.quantity.split(' ')[1] || 'Pill',
-      time: convertTimeTo24(med.time), // Now this works!
+      time: convertTimeTo24(med.time),
       frequency: ['Daily', 'Weekly'].includes(med.frequency) ? med.frequency : 'Custom',
       selectedDays: med.selectedDays || [],
       category: isOther ? 'Other' : med.category,
@@ -174,12 +174,17 @@ const MedicationList: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  // ✅ 2. The Archive Handler
-  const handleArchive = (id: string) => {
-    setMedications(prev => prev.map(m =>
-      m.id === id ? { ...m, isArchived: !m.isArchived } : m
-    ));
+  // ✅ 5. Cloud Archiving
+  const handleArchive = async (id: string, currentStatus: boolean) => {
+    try {
+      const res = await api.patch(`/medications/${id}`, { isArchived: !currentStatus }); //
+      setMeds(prev => prev.map(m => m._id === id ? res.data : m));
+    } catch (err) {
+      alert("Archive failed.");
+    }
   };
+
+  if (loading) return <div className="p-10 text-center text-gray-400">Syncing with MediPredict Cloud...</div>;
 
   return (
     <div className="space-y-8 mt-4 animate-in fade-in duration-500 pb-32">
@@ -218,16 +223,16 @@ const MedicationList: React.FC = () => {
       {/* Medication Grid */}
       <div className="grid grid-cols-1 gap-6">
         {/* ✅ FIX 1: Use a combined filter for Search + Archive Status */}
-        {medications
+        {meds
           .filter(m => activeTab === 'archived' ? m.isArchived : !m.isArchived)
           .filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()) || m.category.toLowerCase().includes(searchTerm.toLowerCase()))
           .length > 0 ? (
-          medications
+          meds
             .filter(m => activeTab === 'archived' ? m.isArchived : !m.isArchived)
             .filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()) || m.category.toLowerCase().includes(searchTerm.toLowerCase()))
             .map((med) => (
               <motion.div
-                key={med.id}
+                key={med._id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={cn(
@@ -259,7 +264,9 @@ const MedicationList: React.FC = () => {
                     </div>
                     {/* Status Badge (Hidden if Archived) */}
                     {!med.isArchived && (
-                      <div className={cn(
+                      <div 
+                      onClick={() => handleToggleTaken(med)}
+                      className={cn(
                         "flex items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
                         med.isTaken ? "bg-green-50 text-success border border-success/10" : "bg-blue-50 text-primary border border-primary/10"
                       )}>
@@ -286,7 +293,7 @@ const MedicationList: React.FC = () => {
 
                       {/* ✅ FIX 3: Archive/Unarchive Toggle */}
                       <button
-                        onClick={() => handleArchive(med.id)}
+                        onClick={() => handleArchive(med._id, med.isArchived)}
                         title={med.isArchived ? "Unarchive" : "Archive"}
                         className="w-9 h-9 rounded-full bg-surface-container-low text-amber-600 flex items-center justify-center hover:bg-amber-600 hover:text-white transition-all"
                       >
@@ -294,7 +301,7 @@ const MedicationList: React.FC = () => {
                       </button>
 
                       <button
-                        onClick={() => handleDelete(med.id)}
+                        onClick={() => handleDelete(med._id)}
                         className="w-9 h-9 rounded-full bg-surface-container-low text-error flex items-center justify-center hover:bg-error hover:text-white transition-all"
                       >
                         <Trash2 className="w-4 h-4" />

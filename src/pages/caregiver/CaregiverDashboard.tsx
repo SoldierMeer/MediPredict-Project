@@ -5,17 +5,32 @@ import { ShieldAlert, Pill, TrendingUp, AlertTriangle, Send, ChevronRight, Histo
 import { MOCK_INSIGHTS } from '../../data/mockData';
 import { cn } from '../../utils/cn';
 import { useUser } from '@/src/context/UserContext';
+import {useState, useEffect} from 'react'
+import api from '../../utils/api'; // ✅ Add this import
 
 const CaregiverDashboard: React.FC = () => {
 
-  const { userName } = useUser();
+  const { activePatient, userName } = useUser(); 
+  const [meds, setMeds] = useState([]); // ✅ Define the state
+
+  useEffect(() => {
+    if (activePatient?._id) {
+      api.get(`/medications/patient/${activePatient._id}`)
+        .then(res => setMeds(res.data))
+        .catch(err => console.error(err));
+    }
+  }, [activePatient]);
+
+  if (!activePatient) {
+    return <div className="p-10 text-center">Please select a patient from the Hub.</div>;
+  }
 
   return (
     <div className="space-y-8 mt-4 pb-32 animate-in fade-in duration-500">
       {/* Patient Summary Section */}
       <section className="flex items-center justify-between">
         <div className="space-y-1">
-          <h2 className="text-2xl font-extrabold text-on-surface tracking-tight font-display">Good Morning, {userName.split(' ')[0]}!</h2>
+          <h2 className="text-2xl font-extrabold text-on-surface tracking-tight font-display">Monitoring: {activePatient.name}</h2>
           <div className="flex items-center gap-2">
             <span className="bg-blue-100 text-primary px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest border border-blue-200">Stable Condition</span>
             <span className="text-text-secondary text-xs font-bold uppercase tracking-tighter opacity-60">ID: #88219</span>

@@ -29,106 +29,106 @@ export interface HistoryLog {
  * MASTER_MEDICATIONS is now the single source of truth for the entire app.
  * Using one list prevents UI misalignment between different screens.
  */
-export const MASTER_MEDICATIONS: Medication[] = [
-  {
-    id: '1',
-    name: 'Panadol',
-    dosage: '500mg',
-    quantity: '1 Pill', // ✅ Added
-    time: '10:47 AM',
-    category: 'Analgesic',
-    isTaken: false,
-    frequency: 'As needed',
-    status: 'routine',
-    isArchived: false,
-    snoozeUntil: null,
-    snoozeCount: 0
-  },
-  {
-    id: '2',
-    name: 'Amoxicillin',
-    dosage: '250mg',
-    quantity: '1 Capsule', // ✅ Added
-    time: '02:30 PM',
-    category: 'Antibiotic',
-    isTaken: false,
-    frequency: 'Three times daily',
-    status: 'active',
-    isArchived: false,
-    snoozeUntil: null,
-    snoozeCount: 0
-  },
-  {
-    id: '3',
-    name: 'Lisinopril',
-    dosage: '10mg',
-    quantity: '1 Pill', // ✅ Added
-    time: '11:15 AM',
-    category: 'Heart',
-    isTaken: false,
-    frequency: 'Daily',
-    status: 'active',
-    isArchived: false,
-    snoozeUntil: null,
-    snoozeCount: 0
-  },
-  {
-    id: '4',
-    name: 'Metformin',
-    dosage: '500mg',
-    quantity: '1 Pill', // ✅ Added
-    time: '01:30 PM',
-    category: 'Diabetes',
-    isTaken: false,
-    frequency: 'Daily',
-    status: 'upcoming',
-    isArchived: false,
-    snoozeUntil: null,
-    snoozeCount: 0
-  },
-  {
-    id: '5',
-    name: 'Atorvastatin',
-    dosage: '20mg',
-    quantity: '1 Pill', // ✅ Added
-    time: '09:00 PM',
-    category: 'Cholesterol',
-    isTaken: false,
-    frequency: 'Nightly',
-    status: 'missed',
-    isArchived: false,
-    snoozeUntil: null,
-    snoozeCount: 0
-  },
-  {
-    id: '6',
-    name: 'Multivitamin',
-    dosage: 'Daily Vit',
-    quantity: '1 Capsule', // ✅ Added
-    time: '10:48 AM',
-    category: 'Supplement',
-    isTaken: false,
-    frequency: 'Daily',
-    status: 'routine',
-    isArchived: false,
-    snoozeUntil: null,
-    snoozeCount: 0
-  },
-  {
-    id: '7',
-    name: 'Gaviscon',
-    dosage: '10ml',
-    quantity: '2 Spoons', // ✅ Added "Wildcard" for your spoon logic
-    time: '08:00 PM',
-    category: 'Antacid',
-    isTaken: false,
-    frequency: 'As needed',
-    status: 'routine',
-    isArchived: false,
-    snoozeUntil: null,
-    snoozeCount: 0
-  }
-];
+// export const MASTER_MEDICATIONS: Medication[] = [
+//   {
+//     id: '1',
+//     name: 'Panadol',
+//     dosage: '500mg',
+//     quantity: '1 Pill', // ✅ Added
+//     time: '10:47 AM',
+//     category: 'Analgesic',
+//     isTaken: false,
+//     frequency: 'As needed',
+//     status: 'routine',
+//     isArchived: false,
+//     snoozeUntil: null,
+//     snoozeCount: 0
+//   },
+//   {
+//     id: '2',
+//     name: 'Amoxicillin',
+//     dosage: '250mg',
+//     quantity: '1 Capsule', // ✅ Added
+//     time: '02:30 PM',
+//     category: 'Antibiotic',
+//     isTaken: false,
+//     frequency: 'Three times daily',
+//     status: 'active',
+//     isArchived: false,
+//     snoozeUntil: null,
+//     snoozeCount: 0
+//   },
+//   {
+//     id: '3',
+//     name: 'Lisinopril',
+//     dosage: '10mg',
+//     quantity: '1 Pill', // ✅ Added
+//     time: '11:15 AM',
+//     category: 'Heart',
+//     isTaken: false,
+//     frequency: 'Daily',
+//     status: 'active',
+//     isArchived: false,
+//     snoozeUntil: null,
+//     snoozeCount: 0
+//   },
+//   {
+//     id: '4',
+//     name: 'Metformin',
+//     dosage: '500mg',
+//     quantity: '1 Pill', // ✅ Added
+//     time: '01:30 PM',
+//     category: 'Diabetes',
+//     isTaken: false,
+//     frequency: 'Daily',
+//     status: 'upcoming',
+//     isArchived: false,
+//     snoozeUntil: null,
+//     snoozeCount: 0
+//   },
+//   {
+//     id: '5',
+//     name: 'Atorvastatin',
+//     dosage: '20mg',
+//     quantity: '1 Pill', // ✅ Added
+//     time: '09:00 PM',
+//     category: 'Cholesterol',
+//     isTaken: false,
+//     frequency: 'Nightly',
+//     status: 'missed',
+//     isArchived: false,
+//     snoozeUntil: null,
+//     snoozeCount: 0
+//   },
+//   {
+//     id: '6',
+//     name: 'Multivitamin',
+//     dosage: 'Daily Vit',
+//     quantity: '1 Capsule', // ✅ Added
+//     time: '10:48 AM',
+//     category: 'Supplement',
+//     isTaken: false,
+//     frequency: 'Daily',
+//     status: 'routine',
+//     isArchived: false,
+//     snoozeUntil: null,
+//     snoozeCount: 0
+//   },
+//   {
+//     id: '7',
+//     name: 'Gaviscon',
+//     dosage: '10ml',
+//     quantity: '2 Spoons', // ✅ Added "Wildcard" for your spoon logic
+//     time: '08:00 PM',
+//     category: 'Antacid',
+//     isTaken: false,
+//     frequency: 'As needed',
+//     status: 'routine',
+//     isArchived: false,
+//     snoozeUntil: null,
+//     snoozeCount: 0
+//   }
+// ];
 
 export const MOCK_HISTORY: HistoryLog[] = [
   {

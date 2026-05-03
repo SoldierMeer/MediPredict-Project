@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const Request = require('../models/Request');
 
 exports.register = async (req, res) => {
   try {
@@ -13,7 +14,7 @@ exports.register = async (req, res) => {
     const patientCode = `MP-${Math.floor(1000 + Math.random() * 9000)}`;
 
     // Save the full profile to MongoDB Atlas
-    const user = new User({ name, email, password, dob, phoneNumber, gender, patientCode });
+    const user = new User({ name, email, password, dob, phoneNumber, gender, patientCode, role:null });
     await user.save();
 
     res.status(201).json({ message: "User registered successfully", patientCode });
@@ -23,22 +24,81 @@ exports.register = async (req, res) => {
 };
 
 // Login stays the same as before...
+// controllers/authController.js
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
 
+    // ✅ FIX: Check if user exists BEFORE accessing user.role
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    let initialLinkStatus = 'none';
+    if (user.role === 'caregiver') {
+      const existingLink = await Request.findOne({ 
+        caregiverId: user._id, 
+        status: 'accepted' 
+      });
+      if (existingLink) initialLinkStatus = 'accepted';
     }
 
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
     
     res.json({ 
       token, 
-      user: { id: user._id, name: user.name, patientCode: user.patientCode } 
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        role: user.role,    
+        linkStatus: initialLinkStatus,
+        patientCode: user.patientCode, 
+        phoneNumber: user.phoneNumber,
+        dob: user.dob
+      } 
     });
   } catch (error) {
+    // This is what sends the 500 error to your console
     res.status(500).json({ error: error.message });
   }
+};
+
+// ✅ New Function: Update Role after Selection
+// ✅ Corrected: Update Role after Selection
+exports.selectRole = async (req, res) => {
+    try {
+      const { role } = req.body;
+      
+      // ✅ FIX: Use req.user._id (Mongoose style)
+      const userId = req.user._id; 
+
+      console.log("Updating role for User ID:", userId, "to:", role); // 🔍 Debug log
+
+      if (!['patient', 'caregiver'].includes(role)) {
+        return res.status(400).json({ message: "Invalid role selected" });
+      }
+
+      let updateData = { role };
+
+      // Generate code only if needed
+      if (role === 'patient' && !req.user.patientCode) {
+        updateData.patientCode = `MP-${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(
+        userId, 
+        updateData, 
+        { new: true }
+      ).select('-password');
+
+      res.json({
+        message: "Profile finalized!",
+        user: updatedUser
+      });
+    } catch (error) {
+      console.error("SelectRole Error:", error);
+      res.status(500).json({ error: error.message });
+    }
 };

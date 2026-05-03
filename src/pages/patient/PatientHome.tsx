@@ -77,7 +77,7 @@ const PatientHome: React.FC = () => {
   const navigate = useNavigate();
   const { medications, setMedications } = useMeds();
   const { activeReminder, setActiveReminder } = useMedicationTimer(medications, setMedications);
-  const { userId, userName, patientCode } = useUser();
+  const {role, userId, userName, patientCode } = useUser();
 
   // ✅ Midnight Reset Logic
   useEffect(() => {
@@ -100,6 +100,12 @@ const PatientHome: React.FC = () => {
     const interval = setInterval(performMidnightReset, 3600000);
     return () => clearInterval(interval);
   }, [setMedications]);
+
+  useEffect(() => {
+    if (userId && !role) {
+      navigate('/role-selector');
+    }
+  }, [userId, navigate]);
 
   // ✅ Handle Mark as Taken + Telemetry
   const handleTakeMedicine = (id?: string) => {

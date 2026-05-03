@@ -1,55 +1,34 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence, } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion'; // Changed from 'motion/react' to 'framer-motion' for standard naming
 import {
     User, Mail, Phone, Shield,
     Bell, ShieldAlert, Users,
     LogOut, ChevronRight,
-    ShieldCheck, Lock,
     Activity, ArrowLeft, Key,
-    Info, 
 } from 'lucide-react';
 import { useUser } from '../../context/UserContext';
 import { cn } from '../../utils/cn';
-import api from '../../utils/api';
-
 
 const CaregiverSettings: React.FC = () => {
-    const { logout, userName, userEmail, userPhone, userId, role, linkStatus } = useUser();
+    // ✅ Destructure activePatient - this is now our single source of truth
+    const { logout, userName, userEmail, userPhone, activePatient } = useUser();
     const navigate = useNavigate();
     
     const [showLogoutModal, setShowLogoutModal] = useState(false);
-    const [linkedPatient, setLinkedPatient] = useState({ name: 'Loading...', code: '---' });
     const [notifications, setNotifications] = useState({
         emergency: true,
         missedDose: true,
         dailySummary: false,
     });
 
-    // Mock data for AI-driven stats until we implement the prediction logic
-    const patientStats = {
-        status: 'Active',
-        adherence: 94,
-        riskLevel: 'Low'
+    // ✅ Create a helper object to handle display logic and null safety
+    const displayPatient = {
+        name: activePatient?.name || "No Patient Selected",
+        code: activePatient?.patientCode || "---",
+        adherence: activePatient?.adherenceRate || 0,
+        risk: activePatient?.riskLevel || "N/A"
     };
-
-    useEffect(() => {
-        const fetchLinkedPatient = async () => {
-            if (role === 'caregiver' && linkStatus === 'accepted' && userId) {
-                try {
-                    const res = await api.get(`/auth/links/patient-detail/${userId}`);
-                    setLinkedPatient({ 
-                        name: res.data.name, 
-                        code: res.data.patient_code 
-                    });
-                } catch (err) {
-                    console.error("Error fetching linked patient:", err);
-                    setLinkedPatient({ name: "Connection Error", code: "N/A" });
-                }
-            }
-        };
-        fetchLinkedPatient();
-    }, [userId, role, linkStatus]);
 
     const handleLogout = () => {
         logout();
@@ -76,11 +55,10 @@ const CaregiverSettings: React.FC = () => {
                 </div>
             </div>
 
-            {/* 1. Caregiver Personal Profile Card (NEW) */}
+            {/* 1. Caregiver Personal Profile Card */}
             <section className="bg-white rounded-[32px] p-8 soft-shadow border border-gray-50 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16"></div>
                 <div className="flex items-center gap-6 mb-8 relative z-10">
-                    {/* Dynamic Avatar */}
                     <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary text-3xl font-black border-4 border-white shadow-sm">
                         {userName?.charAt(0) || <User />}
                     </div>
@@ -111,13 +89,16 @@ const CaregiverSettings: React.FC = () => {
                 </div>
             </section>
 
-            {/* 2. Linked Patient Information Card (Updated) */}
+            {/* 2. Linked Patient Information Card - UPDATED TO USE ACTIVE PATIENT */}
             <section>
                 <div className="flex items-center justify-between mb-4 px-2">
-                    <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Linked Patient</h2>
-                    <span className="text-[10px] bg-success/10 text-success px-2 py-1 rounded-full font-bold uppercase tracking-wider">
-                        Active
-                    </span>
+                    <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Selected Patient</h2>
+                    <button 
+                        onClick={() => navigate('/caregiver/hub')}
+                        className="text-[10px] bg-primary/10 text-primary px-3 py-1 rounded-full font-bold uppercase tracking-wider hover:bg-primary hover:text-white transition-all"
+                    >
+                        Switch Patient
+                    </button>
                 </div>
                 <div className="bg-primary rounded-[32px] p-6 text-white soft-shadow relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-bl-[64px] transition-all group-hover:scale-110" />
@@ -125,8 +106,8 @@ const CaregiverSettings: React.FC = () => {
                     <div className="flex justify-between items-start mb-6 relative z-10">
                         <div>
                             <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest mb-1">Currently Monitoring</p>
-                            <h3 className="text-2xl font-bold tracking-tight">{linkedPatient.name || "None Linked"}</h3>
-                            <p className="text-white/60 font-mono text-xs mt-1">ID: {linkedPatient.code || "---"}</p>
+                            <h3 className="text-2xl font-bold tracking-tight">{displayPatient.name}</h3>
+                            <p className="text-white/60 font-mono text-xs mt-1">ID: {displayPatient.code}</p>
                         </div>
                         <div className="bg-white/10 p-2.5 rounded-2xl backdrop-blur-sm">
                             <Users className="w-6 h-6 text-white" />
@@ -140,8 +121,7 @@ const CaregiverSettings: React.FC = () => {
                                 <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">Adherence</span>
                             </div>
                             <div className="flex items-end gap-1">
-                                <span className="text-2xl font-bold">94%</span>
-                                <span className="text-[10px] mb-1 font-medium text-white/50">Target 90%</span>
+                                <span className="text-2xl font-bold">{displayPatient.adherence}%</span>
                             </div>
                         </div>
                         <div className="bg-white/10 rounded-2xl p-4 backdrop-blur-sm">
@@ -149,8 +129,8 @@ const CaregiverSettings: React.FC = () => {
                                 <ShieldAlert className="w-4 h-4 text-white/70" />
                                 <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">Risk Level</span>
                             </div>
-                            <div className="inline-flex px-3 py-1.5 rounded-xl font-bold text-xs uppercase tracking-wider border bg-success/20 border-success/30 text-success">
-                                Low Risk
+                            <div className="inline-flex px-3 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider border bg-white/10 border-white/20">
+                                {displayPatient.risk} Risk
                             </div>
                         </div>
                     </div>
@@ -164,17 +144,17 @@ const CaregiverSettings: React.FC = () => {
                     <div className="flex items-center justify-between p-5 px-6 border-b border-gray-50">
                         <div className="flex flex-col max-w-[70%]">
                             <span className="text-sm font-bold text-text-primary">Emergency Alerts</span>
-                            <span className="text-[10px] text-text-secondary font-medium mt-1 uppercase tracking-widest">Immediate notification for critical patient events</span>
+                            <span className="text-[10px] text-text-secondary font-medium mt-1 uppercase tracking-widest leading-relaxed">Immediate notification for critical patient events</span>
                         </div>
                         <ToggleSwitch
                             checked={notifications.emergency}
                             onChange={() => toggleNotification('emergency')}
                         />
                     </div>
-                    <div className="flex items-center justify-between p-5 px-6 border-b border-gray-50">
+                    <div className="flex items-center justify-between p-5 px-6">
                         <div className="flex flex-col max-w-[70%]">
                             <span className="text-sm font-bold text-text-primary">Missed Dose Alerts</span>
-                            <span className="text-[10px] text-text-secondary font-medium mt-1 uppercase tracking-widest">Alert when patient skips a scheduled medication</span>
+                            <span className="text-[10px] text-text-secondary font-medium mt-1 uppercase tracking-widest leading-relaxed">Alert when patient skips a scheduled medication</span>
                         </div>
                         <ToggleSwitch
                             checked={notifications.missedDose}
@@ -257,7 +237,6 @@ const CaregiverSettings: React.FC = () => {
         </div>
     );
 }
-export default CaregiverSettings;
 
 const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked, onChange }) => (
     <button
@@ -276,3 +255,5 @@ const ToggleSwitch: React.FC<{ checked: boolean; onChange: () => void }> = ({ ch
         />
     </button>
 );
+
+export default CaregiverSettings;

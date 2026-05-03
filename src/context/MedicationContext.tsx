@@ -16,22 +16,25 @@ const MedicationContext = createContext<MedicationContextType | undefined>(undef
 export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { userId } = useUser();
+  const { userId, role, activePatient } = useUser();
+
 
   // 1. Fetch Medications from MongoDB
-  const fetchMedications = async () => {
-    if (!userId) return;
-    setIsLoading(true);
+  const fetchMeds = async () => {
+    // Logic: If caregiver, use activePatient._id. If patient, use their own userId.
+    const targetId = role === 'caregiver' ? activePatient?._id : userId;
+    
+    if (!targetId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const response = await api.get('/medications');
-      // Map MongoDB _id to the 'id' field expected by your UI
-      const formattedMeds = response.data.map((med: any) => ({
-        ...med,
-        id: med._id 
-      }));
-      setMedications(formattedMeds);
-    } catch (error) {
-      console.error("Failed to fetch medications:", error);
+      setIsLoading(true);
+      const res = await api.get(`/medications/patient/${targetId}`);
+      setMedications(res.data);
+    } catch (err) {
+      console.error("Failed to sync medications with MongoDB Atlas:", err);
     } finally {
       setIsLoading(false);
     }
@@ -52,18 +55,18 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Trigger fetch when the user logs in or the component mounts
   useEffect(() => {
     if (userId) {
-      fetchMedications();
+      fetchMeds();
       // Optional: Refresh the list every 30 seconds to catch Postman/Caregiver additions
-      const interval = setInterval(fetchMedications, 3000); 
+      const interval = setInterval(fetchMeds, 3000); 
       return () => clearInterval(interval);
     }
-  }, [userId]);
+  }, [userId, activePatient, role]);
 
   return (
     <MedicationContext.Provider value={{ 
       medications, 
       setMedications, 
-      fetchMedications, 
+      fetchMeds, 
       addMedication,
       isLoading 
     }}>

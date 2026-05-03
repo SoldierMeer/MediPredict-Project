@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider, useUser } from './context/UserContext';
 import { AnimatePresence } from 'motion/react';
+import ProtectedRoute from './components/ProtectedRoute';
 
 // Shared Pages
 import SplashScreen from './pages/shared/SplashScreen';
@@ -27,6 +28,7 @@ import ReminderPopup from './components/patient/ReminderPopup';
 import CaregiverDashboard from './pages/caregiver/CaregiverDashboard';
 import CaregiverMedList from './pages/caregiver/CaregiverMedList';
 import CaregiverSettings from './pages/caregiver/CaregiverSettings';
+import PatientHub from './pages/caregiver/PatientHub';
 
 // Layouts
 import AppLayout from './layouts/AppLayout';
@@ -36,10 +38,11 @@ import { MASTER_MEDICATIONS } from './data/mockData';
 import { MedicationProvider } from './context/MedicationContext';
 
 const AppRoutes = () => {
-  const { role, isLoggedIn, linkStatus } = useUser();
+  // ✅ Added 'activePatient' to destructuring to fix ReferenceError
+  const { role, isLoggedIn, activePatient, linkStatus } = useUser();
   const [showReminder, setShowReminder] = useState(false);
 
-  // Demo: Show reminder after 10 seconds for patient
+  // Demo: Show reminder after 15 seconds for patient
   useEffect(() => {
     if (isLoggedIn && role === 'patient') {
       const timer = setTimeout(() => setShowReminder(true), 15000);
@@ -63,43 +66,44 @@ const AppRoutes = () => {
         }>
           <Route path="home" element={<PatientHome />} />
           <Route path="medications" element={<MedicationList />} />
-          <Route path="insights" element={<PatientInsights />} />
+          <Route path="insights" element={activePatient ? <PatientInsights /> : <Navigate to="/caregiver/hub" replace />} />
           <Route path="caregiver" element={<CaregiverInfo />} />
           <Route path="settings" element={<PatientSettings />} />
           <Route index element={<Navigate to="home" />} />
         </Route>
 
-        {/* Caregiver Flow */}
+        {/* Caregiver Flow (Corrected) */}
         <Route
           path="/caregiver"
           element={isLoggedIn && role === 'caregiver' ? <AppLayout title="CarePulse" /> : <Navigate to="/login" />}
         >
-          {/* 1. The Gatekeeper: The Link Patient screen handles both 'none' and 'pending' UI internally */}
+          {/* ✅ 1. THE LANDING ZONE: Landing on /caregiver now always opens the Hub */}
+          <Route index element={<PatientHub />} /> 
+          <Route path="hub" element={<PatientHub />} />
+          
+          {/* ✅ 2. ENTRY POINT: Always accessible to link new people */}
           <Route path="link-patient" element={<LinkPatientScreen />} />
 
-          {/* 2. Protected Data Routes: Redirect to link-patient if NOT accepted */}
+          {/* ✅ 3. PROTECTED DATA ZONE: Redirects to HUB if no patient is selected */}
           <Route
             path="dashboard"
-            element={linkStatus === 'accepted' ? <CaregiverDashboard /> : <Navigate to="/caregiver/link-patient" replace />}
+            element={activePatient ? <CaregiverDashboard /> : <Navigate to="/caregiver/hub" replace />}
           />
           <Route
             path="medications"
-            element={linkStatus === 'accepted' ? <CaregiverMedList /> : <Navigate to="/caregiver/link-patient" replace />}
+            element={activePatient ? <CaregiverMedList /> : <Navigate to="/caregiver/hub" replace />}
           />
           <Route
             path="insights"
-            element={linkStatus === 'accepted' ? <PatientInsights /> : <Navigate to="/caregiver/link-patient" replace />}
+            element={activePatient ? <PatientInsights /> : <Navigate to="/caregiver/hub" replace />}
           />
           <Route
             path="history"
-            element={linkStatus === 'accepted' ? <PatientHistory /> : <Navigate to="/caregiver/link-patient" replace />}
+            element={activePatient ? <PatientHistory /> : <Navigate to="/caregiver/hub" replace />}
           />
 
-          {/* 3. General Routes: Always accessible to the caregiver */}
+          {/* ✅ 4. GENERAL ACCESS: Always available for account management */}
           <Route path="settings" element={<CaregiverSettings />} />
-
-          {/* 4. Default Redirects */}
-          <Route index element={<Navigate to="dashboard" replace />} />
         </Route>
 
         {/* Fallback */}

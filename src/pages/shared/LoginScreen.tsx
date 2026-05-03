@@ -55,21 +55,22 @@ const LoginScreen: React.FC = () => {
   
           // ✅ Pass data to your existing context
           login(
-            'patient',            // Default role for this flow
-            user.id,             // user_id
-            'none',              // link_status
-            user.patientCode,    // patient_code from MongoDB
+            user.role,            // Use the real role from DB (could be null)
+            user.id, 
+            'none', 
+            user.patientCode, 
             user.name, 
-            email, 
-            phone, 
-            dob
+            user.email,           // From server
+            user.phoneNumber,     // From server (fixes "Not Provided")
+            user.dob              // From server (fixes "Not Provided")
           );
-  
-          navigate('/patient/home');
-        } else {
-          // 4. Handle Successful Registration
-          alert("Registration successful! Please login.");
-          setIsLogin(true); // Toggle to login mode
+          if (!user.role) {
+            navigate('/select-role'); // Forced to choose if role is missing
+          } else if (user.role === 'patient') {
+            navigate('/patient/home');
+          } else if (user.role === 'caregiver') {
+            navigate('/caregiver/dashboard');
+          }
         }
       }
     } catch (err: any) {

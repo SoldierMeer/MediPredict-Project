@@ -8,15 +8,15 @@ import api from '../../utils/api';
 const SelectRoleScreen: React.FC = () => {
   const navigate = useNavigate();
   // ✅ Pull the existing identity data from context so we can re-save it during login()
-  const { 
-    userId, 
-    userName, 
-    userEmail, 
-    userPhone, 
+  const {
+    userId,
+    userName,
+    userEmail,
+    userPhone,
     userDob,
-    login, 
-    role, 
-    isLoggedIn 
+    login,
+    role,
+    isLoggedIn
   } = useUser();
 
   // Guard: Redirect if session is invalid or role is already picked
@@ -31,39 +31,36 @@ const SelectRoleScreen: React.FC = () => {
   }, [isLoggedIn, role, navigate]);
 
   const handleRoleSelection = async (selectedRole: 'patient' | 'caregiver') => {
-    if (!userId || userId === "null") {
-      alert("Session expired. Please log in again.");
-      navigate('/login');
-      return;
-    }
+    // Note: We don't need to check userId here because the 
+    // backend will get it from the JWT token via authMiddleware.
 
     try {
       // 1. Update role in the Database
-      const response = await api.put(`/auth/update-role?user_id=${userId}&new_role=${selectedRole}`);
+      // We use POST to match your router.post('/select-role', ...)
+      const response = await api.post('/auth/select-role', {
+        role: selectedRole
+      });
 
-      const updatedRole = response.data.role;
-      const updatedCode = response.data.patient_code;
+      // The backend 'selectRole' function returns { message, user }
+      const updatedUser = response.data.user;
 
-      // 2. ✅ Update the context with ALL 7 arguments
-      // We pass back the userName, userEmail, and userPhone that were already in our context
       login(
-        updatedRole, 
-        userId, 
-        'none', 
-        updatedCode, 
-        userName, 
-        userEmail, 
-        userPhone,
-        userDob
+        updatedUser.role,
+        updatedUser._id || updatedUser.id, // ✅ Fallback in case of serialization differences
+        'none',
+        updatedUser.patientCode,
+        updatedUser.name,
+        updatedUser.email,
+        updatedUser.phoneNumber,
+        updatedUser.dob
       );
-      
+
       // 3. Navigate to the appropriate dashboard
       if (selectedRole === 'patient') navigate('/patient/home');
-      else navigate('/caregiver/dashboard');
+      if (selectedRole === 'caregiver') navigate('/caregiver/hub');
 
     } catch (error: any) {
-      const rawDetail = error.response?.data?.detail;
-      const errorMsg = Array.isArray(rawDetail) ? rawDetail[0]?.msg : "Could not update role.";
+      const errorMsg = error.response?.data?.message || "Could not update role.";
       console.error("Update Role Error:", error);
       alert(errorMsg);
     }
@@ -77,9 +74,9 @@ const SelectRoleScreen: React.FC = () => {
         </div>
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-full bg-surface-container overflow-hidden border border-primary/10">
-            <img 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQhZv-S62b9LKohqIKzbvizAZAbuLb55EKRu4OIKmTql9_-ZWJM6RkHOpqImqpsjJrQCjGjTG6YPuyP_TrelgngnJAqlhCeJBDcEfmyvZchP1IlZsWQ785iiZIl6miGhgH7avQDgnlJjrXXy-RNeBhsJsvdFsSN2vK9Dnc2bQ9q7AvG4ebZSqCZeFjqGjHiko-8yCbeeplzu9NETlJubmu1SsGvhvfXzj-20wZos36dNzUM-e7x9dc7Wo9iOgnT5MIEZbsKGGenJ4" 
-              alt="User Profile" 
+            <img
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQhZv-S62b9LKohqIKzbvizAZAbuLb55EKRu4OIKmTql9_-ZWJM6RkHOpqImqpsjJrQCjGjTG6YPuyP_TrelgngnJAqlhCeJBDcEfmyvZchP1IlZsWQ785iiZIl6miGhgH7avQDgnlJjrXXy-RNeBhsJsvdFsSN2vK9Dnc2bQ9q7AvG4ebZSqCZeFjqGjHiko-8yCbeeplzu9NETlJubmu1SsGvhvfXzj-20wZos36dNzUM-e7x9dc7Wo9iOgnT5MIEZbsKGGenJ4"
+              alt="User Profile"
               className="w-full h-full object-cover"
             />
           </div>
@@ -95,7 +92,7 @@ const SelectRoleScreen: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Patient Card */}
-            <motion.button 
+            <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => handleRoleSelection('patient')}
@@ -113,7 +110,7 @@ const SelectRoleScreen: React.FC = () => {
             </motion.button>
 
             {/* Caregiver Card */}
-            <motion.button 
+            <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => handleRoleSelection('caregiver')}

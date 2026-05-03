@@ -25,7 +25,10 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 1. Initial State from LocalStorage
-  const [role, setRoleState] = useState<UserRole>(() => (localStorage.getItem('mp_role') as UserRole) || null);
+  const [role, setRoleState] = useState<UserRole>(() => {
+    const savedRole = localStorage.getItem('mp_role');
+    return (savedRole === "null" || !savedRole) ? null : (savedRole as UserRole);
+  });
   const [userId, setUserId] = useState<string | null>(() => localStorage.getItem('mp_userId') || null);
   const [userName, setUserName] = useState<string | null>(() => localStorage.getItem('mp_userName') || null);
   const [userEmail, setUserEmail] = useState<string | null>(() => localStorage.getItem('mp_userEmail') || null);
@@ -35,6 +38,22 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [patientCode, setPatientCodeState] = useState<string | null>(() => localStorage.getItem('mp_patientCode'));
   const [userDob, setUserDob] = useState<string | null>(() => localStorage.getItem('mp_userDob') || null);
 
+  const [activePatient, setActivePatientState] = useState<any>(() => {
+    // ✅ Check localStorage on startup to persist selection after refresh
+    const savedPatient = localStorage.getItem('active_patient');
+    return savedPatient ? JSON.parse(savedPatient) : null;
+  });
+
+  const setActivePatient = (patient: any) => {
+    setActivePatientState(patient);
+    if (patient) {
+      localStorage.setItem('active_patient', JSON.stringify(patient));
+    } else {
+      localStorage.removeItem('active_patient');
+    }
+  };
+
+  const [loading, setLoading] = useState(true);
 
   const setRole = (newRole: UserRole) => {
     setRoleState(newRole);
@@ -61,7 +80,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserDob(dob);
 
     localStorage.setItem('mp_isLoggedIn', 'true');
-    localStorage.setItem('mp_role', role as string);
+    // localStorage.setItem('mp_role', role as string);
     localStorage.setItem('mp_userId', stringId);
     localStorage.setItem('mp_linkStatus', status as string);
     localStorage.setItem('mp_userDob', dob || '');
@@ -69,6 +88,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (name) localStorage.setItem('mp_userName', name);
     if (email) localStorage.setItem('mp_userEmail', email);
     if (phone) localStorage.setItem('mp_userPhone', phone);
+    if (role) localStorage.setItem('mp_role', role);
+    else localStorage.removeItem('mp_role'); 
+
+    // ✅ FIX: Ensure date is stored as a string or empty
+    localStorage.setItem('mp_userDob', dob || '');
   };
 
   // 3. Updated Logout to clear everything
@@ -81,13 +105,15 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserPhone(null);  // ✅ Add this
     setLinkStatusState('none');
     setUserDob(null);
+    localStorage.removeItem('active_patient');
+  setActivePatientState(null);
     localStorage.clear();
 };
 
   return (
     <UserContext.Provider value={{ 
       role, userId, userName, userEmail, userPhone, userDob, linkStatus,
-      setRole, setLinkStatus, isLoggedIn, login, logout, patientCode 
+      setRole, setLinkStatus, isLoggedIn, login, logout, patientCode, activePatient, setActivePatient
     }}>
       {children}
     </UserContext.Provider>
