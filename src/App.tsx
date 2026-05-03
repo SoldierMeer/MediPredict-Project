@@ -61,16 +61,18 @@ const AppRoutes = () => {
         <Route path="/select-role" element={<SelectRoleScreen />} />
 
         {/* Patient Flow */}
-        <Route path="/patient" element={
-          isLoggedIn && role === 'patient' ? <AppLayout title="MediPredict" /> : <Navigate to="/login" />
-        }>
-          <Route path="home" element={<PatientHome />} />
-          <Route path="medications" element={<MedicationList />} />
-          <Route path="insights" element={activePatient ? <PatientInsights /> : <Navigate to="/caregiver/hub" replace />} />
-          <Route path="caregiver" element={<CaregiverInfo />} />
-          <Route path="settings" element={<PatientSettings />} />
-          <Route index element={<Navigate to="home" />} />
-        </Route>
+<Route path="/patient" element={
+  isLoggedIn && role === 'patient' ? <AppLayout title="MediPredict" /> : <Navigate to="/login" />
+}>
+  <Route path="home" element={<PatientHome />} />
+  <Route path="medications" element={<MedicationList />} />
+  {/* ✅ ADD THIS ROUTE: */}
+  <Route path="history" element={<PatientHistory />} /> 
+  <Route path="insights" element={<PatientInsights />} />
+  <Route path="caregiver" element={<CaregiverInfo />} />
+  <Route path="settings" element={<PatientSettings />} />
+  <Route index element={<Navigate to="home" />} />
+</Route>
 
         {/* Caregiver Flow (Corrected) */}
         <Route

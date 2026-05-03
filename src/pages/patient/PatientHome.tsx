@@ -9,6 +9,7 @@ import { useMedicationTimer } from '../../hooks/useMedicationTimer';
 import ReminderPopup from '../../components/patient/ReminderPopup';
 import PendingRequests from '../patient/PendingRequests';
 import { useMeds } from '../../context/MedicationContext';
+import api from '../../utils/api';
 
 // ✅ Utility to sync behavioral data with the backend
 const logAdherenceEvent = async (medication: Medication, status: 'taken' | 'missed') => {
@@ -108,58 +109,63 @@ const PatientHome: React.FC = () => {
   }, [userId, navigate]);
 
   // ✅ Handle Mark as Taken + Telemetry
-  const handleTakeMedicine = (id?: string) => {
-    const targetId = id || activeReminder?.id;
-    if (!targetId) return;
+  const handleToggleTaken = async (med: any) => {
+    try {
+      // ✅ This triggers the backend logic that calculates 'late' vs 'taken'
+      const res = await api.patch(`/medications/${med._id}`, { 
+        isTaken: !med.isTaken,
+        status: !med.isTaken ? 'taken' : 'upcoming'
+      });
 
-    const medToLog = medications.find(m => m.id === targetId);
-    if (medToLog) {
-      logAdherenceEvent(medToLog, 'taken'); // Safe API call outside state setter
+      // Update the local state so the checkmark appears immediately
+      setMedications(prev => prev.map(m => m._id === med._id ? res.data : m));
+    } catch (err) {
+      console.error("Status update failed:", err);
+      alert("Could not sync with cloud. Check your connection.");
     }
-
-    setMedications(prev => prev.map(med =>
-      med.id === targetId
-        ? { ...med, isTaken: true, status: 'taken', snoozeUntil: null, snoozeCount: 0 }
-        : med
-    ));
-    setActiveReminder(null);
   };
 
   // ✅ FIXED Handle Snooze: No side-effects inside setMedications
-  const handleSnooze = (id?: string) => {
-    const targetId = id || activeReminder?.id;
+  const handleSnooze = async (id?: string) => {
+    const targetId = id || activeReminder?.id || activeReminder?._id;
     if (!targetId) return;
-
-    // 1. Find the target medication FIRST
-    const targetMed = medications.find(m => m.id === targetId);
+  
+    const targetMed = medications.find(m => m._id === targetId || m.id === targetId);
     if (!targetMed) return;
-
-    const currentSnoozeCount = targetMed.snoozeCount || 0;
-
-    // 2. Perform logic & side effects OUTSIDE the state setter
-    if (currentSnoozeCount >= 2) {
-      logAdherenceEvent(targetMed, 'missed');
-
-      setMedications(prev => prev.map(m =>
-        m.id === targetId ? { ...m, status: 'missed', snoozeUntil: null } : m
-      ));
-    } else {
+  
+    // 1. Always increment the count
+    const nextSnoozeCount = (targetMed.snoozeCount || 0) + 1;
+    
+    // 2. Determine the status (Escalate to 'missed' if they've snoozed > 2 times)
+    const newStatus = nextSnoozeCount > 2 ? 'missed' : 'upcoming';
+  
+    try {
+      // 3. Calculate the next 3-minute nag
       const nextNag = new Date(Date.now() + 3 * 60000);
-      const h = nextNag.getHours() % 12 || 12;
-      const mTime = nextNag.getMinutes().toString().padStart(2, '0');
-      const ampm = nextNag.getHours() >= 12 ? 'PM' : 'AM';
-      const formattedNextNag = `${h.toString().padStart(2, '0')}:${mTime} ${ampm}`;
-
-      setMedications(prev => prev.map(m =>
-        m.id === targetId ? {
-          ...m,
-          status: 'missed',
-          snoozeUntil: formattedNextNag,
-          snoozeCount: currentSnoozeCount + 1
-        } : m
-      ));
+      const formattedNextNag = nextNag.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+  
+      // 4. Single API call for both cases
+      await api.patch(`/medications/${targetId}`, {
+        snoozeCount: nextSnoozeCount,
+        status: newStatus,
+        // If they keep snoozing even when missed, we keep nagging them
+        snoozeUntil: formattedNextNag 
+      });
+  
+      // 5. Telemetry: Log 'missed' only the first time it flips to missed
+      if (nextSnoozeCount === 3) {
+        logAdherenceEvent(targetMed, 'missed');
+      }
+  
+      if (userId) await refreshData(userId);
+      setActiveReminder(null);
+  
+    } catch (err) {
+      console.error("Snooze sync failed:", err);
     }
-    setActiveReminder(null);
   };
 
   // ---------------------------------------------------------
@@ -328,7 +334,7 @@ const PatientHome: React.FC = () => {
           {todaysMeds.length > 0 ? (
             visibleMeds.map((med) => (
               <motion.div
-                key={med.id}
+                key={med.id || med._id}
                 layout
                 whileHover={{ x: 4 }}
                 className="bg-white rounded-[24px] p-5 soft-shadow border border-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -354,14 +360,14 @@ const PatientHome: React.FC = () => {
                 <div className="flex items-center gap-2">
                   {!med.isTaken && (
                     <button
-                      onClick={() => handleSnooze(med.id)}
+                      onClick={() => handleSnooze(med.id || med._id)}
                       className="flex-1 sm:flex-none px-5 py-2.5 rounded-full bg-gray-50 text-primary font-bold text-sm hover:bg-gray-100 transition-colors active:scale-95"
                     >
                       Snooze
                     </button>
                   )}
                   <button
-                    onClick={() => handleTakeMedicine(med.id)}
+                    onClick={() => handleToggleTaken(med)}
                     disabled={med.isTaken}
                     className={cn(
                       "flex-1 sm:flex-none px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-sm active:scale-95",
@@ -442,14 +448,25 @@ const PatientHome: React.FC = () => {
 
       {/* Reminder Popup */}
       <AnimatePresence>
-        {activeReminder && (
-          <ReminderPopup
-            medication={activeReminder}
-            onTake={() => handleTakeMedicine(activeReminder.id)}
-            onClose={() => handleSnooze(activeReminder.id)}
-          />
-        )}
-      </AnimatePresence>
+  {activeReminder && (
+    <ReminderPopup
+    medication={activeReminder}
+    onTake={async () => {
+      await handleToggleTaken(activeReminder);
+      setActiveReminder(null);
+    }}
+    // Use the handleSnooze logic for the Snooze button
+    onSnooze={() => handleSnooze(activeReminder._id || activeReminder.id)} 
+    // For 'Skip', you'd typically mark it as missed immediately
+    onSkip={async () => {
+      await api.patch(`/medications/${activeReminder._id}`, { status: 'missed' });
+      if (userId) await refreshData(userId);
+      setActiveReminder(null);
+    }}
+    onClose={() => setActiveReminder(null)}
+  />
+  )}
+</AnimatePresence>
     </div>
   );
 }
