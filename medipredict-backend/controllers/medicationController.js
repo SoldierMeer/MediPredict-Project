@@ -1,11 +1,28 @@
-const Medication = require('../models/Medication');
-const AdherenceLog = require('../models/AdherenceLog');
+import Medication from '../models/Medication.js';
+import AdherenceLog from '../models/AdherenceLog.js';
+import { calculateRiskLevel } from '../utils/aiEngine.js';
+import User from '../models/User.js';
 
 // Get all meds for a specific patient
-exports.getPatientMedications = async (req, res) => {
+export const getPatientMedications = async (req, res) => {
   try {
     const meds = await Medication.find({ patientId: req.params.patientId });
-    res.json(meds);
+    
+    // Get current server date in YYYY-MM-DD format
+    const today = new Date().toISOString().split('T')[0];
+
+    const processedMeds = meds.map(med => {
+      // If the date the user last clicked "Taken" is not TODAY...
+      if (med.lastTakenDate !== today) {
+        // ...then for the purposes of today's UI, it is NOT taken yet.
+        med.isTaken = false;
+        med.status = 'upcoming';
+        med.snoozeCount = 0;
+      }
+      return med;
+    });
+
+    res.json(processedMeds);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -13,7 +30,7 @@ exports.getPatientMedications = async (req, res) => {
 
 // Add a new medication (Used by Caregivers)
 // medicationController.js
-exports.addMedication = async (req, res) => {
+export const addMedication = async (req, res) => {
   try {
     // The frontend already sends 'patientId' in the body
     const newMed = new Medication(req.body); 
@@ -27,43 +44,51 @@ exports.addMedication = async (req, res) => {
 };
 
 // Update medication (Mark as taken or edit details)
-exports.updateMedication = async (req, res) => {
+export const updateMedication = async (req, res) => {
   try {
-    // 1. Destructure isTaken to prevent ReferenceError
-    const { isTaken } = req.body; 
+    const { isTaken, status: incomingStatus } = req.body;
+    const today = new Date().toISOString().split('T')[0];
 
-    // 2. Fetch the old record for state comparison
+    // 1. Fetch the old record for state comparison
     const oldMed = await Medication.findById(req.params.id);
     if (!oldMed) {
       return res.status(404).json({ error: "Medication not found" });
     }
 
-    // 3. Update the medication record in MongoDB
+    // 2. Prepare update data with Date-Verified stamp
+    // This ensures adherence is tracked for the specific calendar day
+    let updateData = { ...req.body };
+    if (isTaken !== undefined) {
+      updateData.lastTakenDate = isTaken ? today : null;
+    }
+
+    // 3. Update the medication record in MongoDB using the enhanced updateData
     const updatedMed = await Medication.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData, 
       { new: true }
     );
 
-    // 4. Adherence Logic: Only log if the dose was just marked as taken
-    if (isTaken && !oldMed.isTaken) {
+    // 4. Adherence Logging Logic
+    const wasJustTaken = isTaken && !oldMed.isTaken;
+    const wasJustMissed = incomingStatus === 'missed' && oldMed.status !== 'missed';
+
+    if (wasJustTaken || wasJustMissed) {
       const now = new Date();
       
-      // Calculate scheduled time as a Date object
+      // Calculate scheduled time as a Date object for latency math
       const [time, modifier] = updatedMed.time.split(' ');
       let [hours, minutes] = time.split(':');
-      
       if (hours === '12') hours = '00';
       if (modifier === 'PM') hours = (parseInt(hours, 10) + 12).toString();
 
       const scheduledDate = new Date();
-      scheduledDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+      scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
 
-      // Calculate Latency: $T_{actual} - T_{scheduled}$
       const latency = Math.round((now - scheduledDate) / (1000 * 60));
-
-      // Determine status based on your 30-min window
-      const status = latency > 30 ? 'late' : 'taken';
+      
+      // Logic: If explicitly 'missed' via snooze, keep it. Otherwise, check 30-min window.
+      const finalStatus = wasJustMissed ? 'missed' : (latency > 30 ? 'late' : 'taken');
 
       const log = new AdherenceLog({
         patientId: updatedMed.patientId,
@@ -72,25 +97,45 @@ exports.updateMedication = async (req, res) => {
         scheduledTime: updatedMed.time,
         actualTakenTime: now,
         latencyMinutes: latency,
-        status: status,
+        status: finalStatus,
         snoozeCount: updatedMed.snoozeCount || 0,
-        date: now.toISOString().split('T')[0]
+        date: today
       });
 
       await log.save();
+
+      // --- 🧠 REAL-TIME AI RISK CALCULATION ---
+      // Fetch recent logs (including the one just saved) to perform background inference
+      const logs = await AdherenceLog.find({ patientId: updatedMed.patientId })
+        .sort({ createdAt: -1 })
+        .limit(30);
+
+      const aiAnalysis = calculateRiskLevel(logs);
+
+      // Persist the AI findings to the User profile for Caregiver monitoring
+      await User.findByIdAndUpdate(updatedMed.patientId, {
+        latestRiskLevel: aiAnalysis.level,
+        latestRiskInsight: aiAnalysis.insight,
+        adherenceScore: aiAnalysis.score
+      });
+
+      // Return both the updated med and the fresh AI analysis for instant UI updates
+      return res.json({ 
+        updatedMed, 
+        aiAnalysis 
+      });
     }
 
-    // 5. Send back the updated medication to the frontend
-    res.json(updatedMed);
+    // 5. Default response for non-loggable events (e.g., simple detail edits)
+    res.json({ updatedMed });
 
   } catch (error) {
     console.error("Update Error:", error.message);
     res.status(400).json({ error: error.message });
   }
 };
-
 // Delete medication
-exports.deleteMedication = async (req, res) => {
+export const deleteMedication = async (req, res) => {
   try {
     await Medication.findByIdAndDelete(req.params.id);
     res.json({ message: "Medication removed" });

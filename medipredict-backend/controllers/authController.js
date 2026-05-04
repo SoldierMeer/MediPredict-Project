@@ -1,9 +1,9 @@
-const User = require('../models/User');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const Request = require('../models/Request');
+import User from '../models/User.js';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import Request from '../models/Request.js';
 
-exports.register = async (req, res) => {
+export const register = async (req, res) => {
   try {
     // Destructure the extra fields from Phase 1
     const { name, email, password, dob, phoneNumber, gender } = req.body;
@@ -25,7 +25,7 @@ exports.register = async (req, res) => {
 
 // Login stays the same as before...
 // controllers/authController.js
-exports.login = async (req, res) => {
+export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
@@ -67,7 +67,7 @@ exports.login = async (req, res) => {
 
 // ✅ New Function: Update Role after Selection
 // ✅ Corrected: Update Role after Selection
-exports.selectRole = async (req, res) => {
+export const selectRole = async (req, res) => {
     try {
       const { role } = req.body;
       

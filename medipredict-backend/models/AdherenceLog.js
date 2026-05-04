@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose'
 
 const adherenceLogSchema = new mongoose.Schema({
     // ✅ Change userId to patientId to match the controller and medication model
@@ -13,4 +13,5 @@ const adherenceLogSchema = new mongoose.Schema({
     date: { type: String, required: true } 
 });
 
-module.exports = mongoose.model('AdherenceLog', adherenceLogSchema);
+const AdherenceLog = mongoose.model('AdherenceLog', adherenceLogSchema);
+export default AdherenceLog;

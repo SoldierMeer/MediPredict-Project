@@ -1,11 +1,11 @@
-const Request = require('../models/Request');
-const User = require('../models/User');
+import Request from '../models/Request.js';
+import User from '../models/User.js';
 
 // 1. Caregiver sends a request using a Patient Code
 // POST /api/requests/send
 // controllers/requestController.js
 
-exports.sendRequest = async (req, res) => {
+export const sendRequest = async (req, res) => {
     try {
       const { patientCode } = req.body;
   
@@ -64,7 +64,7 @@ exports.sendRequest = async (req, res) => {
 
 // 2. Patient fetches their pending requests
 // GET /api/requests/:userId
-exports.getPendingRequests = async (req, res) => {
+export const getPendingRequests = async (req, res) => {
   try {
     // ✅ FIX: Use req.user._id instead of req.params.userId for security
     const requests = await Request.find({ 
@@ -79,7 +79,7 @@ exports.getPendingRequests = async (req, res) => {
 
 // 3. Patient accepts or rejects a request
 // PATCH /api/requests/:requestId
-exports.updateRequestStatus = async (req, res) => {
+export const updateRequestStatus = async (req, res) => {
   try {
     const { status } = req.body;
     const request = await Request.findByIdAndUpdate(
@@ -96,7 +96,7 @@ exports.updateRequestStatus = async (req, res) => {
 // 4. Caregiver fetches their list of accepted patients
 // GET /api/requests/my-patients
 // GET /api/requests/my-patients
-exports.getMyPatients = async (req, res) => {
+export const getMyPatients = async (req, res) => {
   try {
     // ✅ FIX: Consistently use ._id
     const caregiverId = req.user._id; 
@@ -113,7 +113,7 @@ exports.getMyPatients = async (req, res) => {
   }
 };
 
-exports.selectRole = async (req, res) => {
+export const selectRole = async (req, res) => {
     try {
       const { role } = req.body;
       const userId = req.user.userId;
@@ -137,7 +137,7 @@ exports.selectRole = async (req, res) => {
 
 // controllers/requestController.js
 
-exports.checkLinkStatus = async (req, res) => {
+export const checkLinkStatus = async (req, res) => {
     try {
       // req.user._id comes from your authMiddleware
       const caregiverId = req.user._id;
@@ -160,7 +160,7 @@ exports.checkLinkStatus = async (req, res) => {
   // 5. Patient fetches their linked caregiver's info
   // controllers/requestController.js
 
-exports.getLinkedCaregiver = async (req, res) => {
+export const getLinkedCaregiver = async (req, res) => {
   try {
     const patientId = req.user._id;
 

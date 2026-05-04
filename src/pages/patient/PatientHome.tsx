@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Pill, Clock, Brain, ChevronRight, CheckCircle2, Copy, ShieldCheck } from 'lucide-react';
+import { Pill, Clock, Brain, ChevronRight, CheckCircle2, Copy, ShieldCheck, Activity } from 'lucide-react';
 import { MOCK_INSIGHTS, type Medication } from '../../data/mockData';
 import { cn } from '../../utils/cn';
 import { useUser } from '../../context/UserContext';
@@ -76,9 +76,9 @@ const getMedicationDayLabel = (med: Medication) => {
 
 const PatientHome: React.FC = () => {
   const navigate = useNavigate();
-  const { medications, setMedications } = useMeds();
+  const { medications, setMedications, isLoading, refreshData, aiInsights, adherenceHistory } = useMeds();
   const { activeReminder, setActiveReminder } = useMedicationTimer(medications, setMedications);
-  const {role, userId, userName, patientCode } = useUser();
+  const {role, userId, userName, patientCode, adherenceScore, latestRiskLevel, latestRiskInsight, setAdherenceData } = useUser();
 
   // ✅ Midnight Reset Logic
   useEffect(() => {
@@ -108,65 +108,116 @@ const PatientHome: React.FC = () => {
     }
   }, [userId, navigate]);
 
-  // ✅ Handle Mark as Taken + Telemetry
-  const handleToggleTaken = async (med: any) => {
-    try {
-      // ✅ This triggers the backend logic that calculates 'late' vs 'taken'
-      const res = await api.patch(`/medications/${med._id}`, { 
-        isTaken: !med.isTaken,
-        status: !med.isTaken ? 'taken' : 'upcoming'
-      });
-
-      // Update the local state so the checkmark appears immediately
-      setMedications(prev => prev.map(m => m._id === med._id ? res.data : m));
-    } catch (err) {
-      console.error("Status update failed:", err);
-      alert("Could not sync with cloud. Check your connection.");
-    }
-  };
-
-  // ✅ FIXED Handle Snooze: No side-effects inside setMedications
-  const handleSnooze = async (id?: string) => {
-    const targetId = id || activeReminder?.id || activeReminder?._id;
-    if (!targetId) return;
-  
-    const targetMed = medications.find(m => m._id === targetId || m.id === targetId);
-    if (!targetMed) return;
-  
-    // 1. Always increment the count
-    const nextSnoozeCount = (targetMed.snoozeCount || 0) + 1;
-    
-    // 2. Determine the status (Escalate to 'missed' if they've snoozed > 2 times)
-    const newStatus = nextSnoozeCount > 2 ? 'missed' : 'upcoming';
-  
-    try {
-      // 3. Calculate the next 3-minute nag
-      const nextNag = new Date(Date.now() + 3 * 60000);
-      const formattedNextNag = nextNag.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-  
-      // 4. Single API call for both cases
-      await api.patch(`/medications/${targetId}`, {
-        snoozeCount: nextSnoozeCount,
-        status: newStatus,
-        // If they keep snoozing even when missed, we keep nagging them
-        snoozeUntil: formattedNextNag 
-      });
-  
-      // 5. Telemetry: Log 'missed' only the first time it flips to missed
-      if (nextSnoozeCount === 3) {
-        logAdherenceEvent(targetMed, 'missed');
+  useEffect(() => {
+    const syncUserStats = async () => {
+      if (!userId) return;
+      try {
+        // Fetch the latest profile data which includes adherenceScore
+        const res = await api.get(`/users/profile/${userId}`);
+        const { adherenceScore, latestRiskLevel, latestRiskInsight } = res.data;
+        
+        // Update the context so the 0% disappears on refresh
+        setAdherenceData(
+          adherenceScore || 0, 
+          latestRiskLevel || 'Stable', 
+          latestRiskInsight || 'Optimal management detected.'
+        );
+      } catch (err) {
+        console.error("Failed to sync AI stats on load:", err);
       }
+    };
   
-      if (userId) await refreshData(userId);
-      setActiveReminder(null);
-  
-    } catch (err) {
-      console.error("Snooze sync failed:", err);
+    syncUserStats();
+  }, [userId, setAdherenceData]);
+
+  // ✅ Handle Mark as Taken + Telemetry
+ // ✅ handleToggleTaken: Optimistic + Real-time AI Sync
+const handleToggleTaken = async (med: any) => {
+  const originalMeds = [...medications];
+
+  // 1. OPTIMISTIC UPDATE: Flip the UI immediately for a snappy feel
+  setMedications(prev => prev.map(m => 
+    (m._id === med._id || m.id === med._id) 
+      ? { ...m, isTaken: !m.isTaken, status: !m.isTaken ? 'taken' : 'upcoming' } 
+      : m
+  ));
+
+  try {
+    // 2. Perform the cloud sync
+    const res = await api.patch(`/medications/${med._id}`, { 
+      isTaken: !med.isTaken,
+      status: !med.isTaken ? 'taken' : 'upcoming'
+    });
+
+    // 3. Destructure the combined response (Med + AI Analysis)
+    const { updatedMed, aiAnalysis } = res.data;
+
+    // 4. Update the local med state with server-side calculated fields (e.g., latency)
+    setMedications(prev => prev.map(m => 
+      (m._id === med._id || m.id === med._id) ? { ...m, ...updatedMed } : m
+    ));
+
+    // 5. GLOBAL SYNC: Push the new score/level to UserContext to update the top cards
+    if (aiAnalysis) {
+      setAdherenceData(aiAnalysis.score, aiAnalysis.level, aiAnalysis.insight);
+      console.log(`✅ Adherence Synced: ${aiAnalysis.score}%`);
     }
-  };
+    
+  } catch (err) {
+    console.error("❌ Sync failed, rolling back:", err);
+    // 6. ROLLBACK: Revert to original state on network failure
+    setMedications(originalMeds);
+    alert("Could not sync with cloud. Reverting changes.");
+  }
+};
+
+// ✅ handleSnooze: Escalation + AI Insight Update
+const handleSnooze = async (id?: string) => {
+  const targetId = id || activeReminder?.id || activeReminder?._id;
+  if (!targetId) return;
+
+  const targetMed = medications.find(m => m._id === targetId || m.id === targetId);
+  if (!targetMed) return;
+
+  const nextSnoozeCount = (targetMed.snoozeCount || 0) + 1;
+  const newStatus = nextSnoozeCount > 2 ? 'missed' : 'upcoming';
+
+  try {
+    const nextNag = new Date(Date.now() + 3 * 60000);
+    const formattedNextNag = nextNag.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+
+    // 1. Update snooze state on the server
+    const res = await api.patch(`/medications/${targetId}`, {
+      snoozeCount: nextSnoozeCount,
+      status: newStatus,
+      snoozeUntil: formattedNextNag 
+    });
+
+    // 2. If the status flipped to 'missed', the AI score needs to update globally
+    const { updatedMed, aiAnalysis } = res.data;
+
+    if (aiAnalysis) {
+      setAdherenceData(aiAnalysis.score, aiAnalysis.level, aiAnalysis.insight);
+    }
+
+    // 3. Telemetry: Log 'missed' only on the 3rd snooze (first time it flips)
+    if (nextSnoozeCount === 3) {
+      logAdherenceEvent(targetMed, 'missed');
+    }
+
+    // 4. Update local state and clear the reminder
+    setMedications(prev => prev.map(m => 
+      (m._id === targetId || m.id === targetId) ? { ...m, ...updatedMed } : m
+    ));
+    setActiveReminder(null);
+
+  } catch (err) {
+    console.error("Snooze sync failed:", err);
+  }
+};
 
   // ---------------------------------------------------------
   // ✅ DATA CALCULATIONS
@@ -181,7 +232,7 @@ const PatientHome: React.FC = () => {
     // ✅ New Logic: Check frequency OR the selectedDays array
     const isDueToday = 
       med.frequency === 'Daily' || 
-      med.frequency.includes(todayName) || 
+      med.frequency?.includes(todayName) || 
       (Array.isArray(med.selectedDays) && med.selectedDays.includes(todayName));
   
     return isActive && isDueToday;
@@ -206,6 +257,36 @@ const PatientHome: React.FC = () => {
   const currentHour = new Date().getHours();
   const greeting = currentHour < 12 ? 'Morning' : currentHour < 17 ? 'Afternoon' : 'Evening';
   const currentDayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
+
+  // Inside PatientHome.tsx, before the return statement
+
+  const getWeeklyData = () => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date();
+    
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(today.getDate() - (6 - i));
+      const dayName = days[d.getDay()];
+      const dateStr = d.toISOString().split('T')[0];
+  
+      const dayLogs = adherenceHistory?.filter(log => log.date === dateStr) || [];
+      
+      // ✅ NEW: Apply weights based on medical risk (taken=1.0, late=0.7, missed=0)
+      const weightedScore = dayLogs.reduce((acc, log) => {
+        if (log.status === 'taken') return acc + 1;
+        if (log.status === 'late') return acc + 0.7; // 👈 Partial penalty for timing
+        return acc;
+      }, 0);
+  
+      const total = dayLogs.length;
+      const rate = total === 0 ? 0 : Math.round((weightedScore / total) * 100);
+  
+      return { day: dayName, rate };
+    });
+  };
+
+const weeklyStats = getWeeklyData();
   // ---------------------------------------------------------
   return (
     <div className="space-y-8 mt-4 animate-in fade-in duration-500 pb-10">
@@ -265,13 +346,13 @@ const PatientHome: React.FC = () => {
             <CheckCircle2 className="text-primary w-5 h-5 fill-primary/10" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-5xl font-bold text-primary font-display antialiased leading-none">{MOCK_INSIGHTS.adherenceRate}%</span>
-            <span className="text-xs font-bold text-success">{MOCK_INSIGHTS.riskTrend}</span>
+            <span className="text-5xl font-bold text-primary font-display antialiased leading-none">{aiInsights?.score || 0}%</span>
+            <span className="text-xs font-bold text-success">{latestRiskLevel}</span>
           </div>
           <div className="mt-6 h-2 w-full bg-surface-container rounded-full overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: `${MOCK_INSIGHTS.adherenceRate}%` }}
+              animate={{ width: `${aiInsights?.score}%` }}
               transition={{ duration: 1, delay: 0.5 }}
               className="h-full bg-primary rounded-full transition-all"
             />
@@ -303,22 +384,42 @@ const PatientHome: React.FC = () => {
         </motion.div>
 
         {/* Risk Status Card */}
-        <motion.div
-          whileHover={{ y: -4 }}
-          className="bg-white rounded-[32px] p-6 soft-shadow border-l-4 border-l-success flex flex-col justify-between relative overflow-hidden"
-        >
-          <div className="absolute top-0 right-0 p-4 opacity-5">
-            <Brain className="w-20 h-20" />
-          </div>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm font-bold text-text-secondary uppercase tracking-wider">AI Risk Level</span>
-            <span className="px-2 py-0.5 rounded-full bg-success/10 text-success text-[10px] font-bold uppercase tracking-widest border border-success/20">Stable</span>
-          </div>
-          <div>
-            <span className="text-4xl font-extrabold text-success block leading-none">{MOCK_INSIGHTS.riskLevel}</span>
-            <p className="text-xs text-text-secondary mt-2 leading-relaxed font-medium">Our models indicate optimal management of chronic conditions.</p>
-          </div>
-        </motion.div>
+<motion.div
+  whileHover={{ y: -4 }}
+  className={cn(
+    "bg-white rounded-[32px] p-6 soft-shadow flex flex-col justify-between relative overflow-hidden border-l-4",
+    aiInsights?.level === 'Warning' ? "border-l-orange-500" : "border-l-success"
+  )}
+>
+  <div className="absolute top-0 right-0 p-4 opacity-5">
+    <Brain className="w-20 h-20" />
+  </div>
+  <div className="flex items-center justify-between mb-4">
+    <span className="text-sm font-bold text-text-secondary uppercase tracking-wider">AI Risk Level</span>
+    
+    {/* ✅ This badge is now dynamic */}
+    <span className={cn(
+      "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest border",
+      aiInsights?.level === 'Warning' 
+        ? "bg-orange-100 text-orange-600 border-orange-200" 
+        : "bg-success/10 text-success border-success/20"
+    )}>
+      {aiInsights?.level || 'Stable'}
+    </span>
+  </div>
+  
+  <div>
+    <span className={cn(
+      "text-4xl font-extrabold block leading-none",
+      aiInsights?.level === 'Warning' ? "text-orange-600" : "text-success"
+    )}>
+      {aiInsights?.level || 'Low'}
+    </span>
+    <p className="text-xs text-text-secondary mt-2 leading-relaxed font-medium">
+      {aiInsights?.insight || 'Our models indicate optimal management of chronic conditions.'}
+    </p>
+  </div>
+</motion.div>
       </section>
 
       {/* Medication List Section */}
@@ -403,49 +504,77 @@ const PatientHome: React.FC = () => {
         </div>
       </section>
 
-      {/* Weekly Adherence Chart */}
-      <section className="bg-white rounded-[32px] p-6 soft-shadow border border-gray-50 overflow-hidden relative">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h3 className="text-2xl font-bold text-text-primary antialiased">Weekly Adherence</h3>
-            <p className="text-sm text-text-secondary">Tracking your consistency over 7 days</p>
-          </div>
-          <div className="text-right">
-            <span className="text-2xl font-bold text-primary">Avg. 94%</span>
-          </div>
-        </div>
-        <div className="flex items-end justify-between h-32 gap-3 mt-4 px-2">
-          {MOCK_INSIGHTS.weeklyData.map((data) => {
-            const isToday = data.day === currentDayShort;
-            return (
-              <div key={data.day} className="flex-1 flex flex-col items-center gap-2">
-                <motion.div
-                  initial={{ height: 0 }}
-                  animate={{ height: `${data.rate}%` }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className={cn(
-                    "w-full rounded-t-xl relative transition-colors",
-                    isToday ? "bg-primary shadow-lg shadow-primary/20" : "bg-blue-50"
-                  )}
-                >
-                  {isToday && (
-                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-primary text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">
-                      {data.rate}%
-                    </div>
-                  )}
-                </motion.div>
-                <span className={cn(
-                  "text-[10px] font-bold uppercase tracking-wider",
-                  isToday ? "text-primary scale-110" : "text-gray-400"
-                )}>
-                  {data.day.charAt(0)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+{/* Weekly Adherence Section - Final Premium Polish */}
+<section className="bg-white rounded-[32px] p-8 soft-shadow border border-gray-50 overflow-hidden">
+  <div className="flex items-center justify-between mb-10">
+    <div>
+      <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
+        <Activity className="w-5 h-5 text-primary" /> Weekly Adherence
+      </h3>
+      <p className="text-[10px] text-text-secondary font-bold uppercase tracking-[0.2em]">7-Day Behavioral Analysis</p>
+    </div>
+    <div className="text-right">
+      <span className="text-2xl font-black text-primary font-display tracking-tight">
+        {aiInsights?.score || 0}%
+      </span>
+      <p className="text-[9px] font-black text-success uppercase tracking-widest mt-0.5">Avg. Score</p>
+    </div>
+  </div>
 
+  {/* Container for the bars */}
+  <div className="flex items-end justify-between h-28 px-2">
+    {weeklyStats.map((data, index) => {
+      const isToday = data.day === currentDayShort;
+      
+      // ✅ Dynamic colors based on AI thresholds
+      const barColor = data.rate >= 90 ? "bg-success" : 
+                       data.rate >= 70 ? "bg-primary" : 
+                       data.rate > 0 ? "bg-orange-400" : "bg-gray-100";
+
+      return (
+        <div key={data.day} className="flex flex-col items-center gap-4 group">
+          {/* Bar Wrapper with fixed width to prevent label wrapping */}
+          <div className="relative w-3 h-28 flex items-end justify-center">
+            
+            {/* 1. Ghost Track (Background) */}
+            <div className="absolute inset-0 bg-gray-50 rounded-full w-full h-full" />
+
+            {/* 2. Active Progress Bar (Real Data) */}
+            <motion.div
+              initial={{ height: 0 }}
+              animate={{ height: `${data.rate}%` }}
+              transition={{ 
+                duration: 1.2, 
+                delay: index * 0.1, 
+                ease: [0.16, 1, 0.3, 1] 
+              }}
+              className={cn(
+                "w-full rounded-full relative z-10 transition-all duration-500",
+                barColor,
+                isToday && "shadow-[0_0_15px_rgba(37,99,235,0.4)] ring-2 ring-white"
+              )}
+            >
+              {/* Floating Tooltip */}
+              {data.rate > 0 && (
+                <div className="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 bg-text-primary text-white text-[9px] px-2 py-1 rounded-md font-black shadow-xl z-20">
+                  {data.rate}%
+                </div>
+              )}
+            </motion.div>
+          </div>
+
+          {/* 3. Fixed Day Label - Using first letter only to prevent glitches */}
+          <span className={cn(
+            "text-[10px] font-black transition-colors w-6 text-center",
+            isToday ? "text-primary" : "text-gray-300 group-hover:text-gray-400"
+          )}>
+            {data.day.charAt(0)}
+          </span>
+        </div>
+      );
+    })}
+  </div>
+</section>
       {/* Reminder Popup */}
       <AnimatePresence>
   {activeReminder && (

@@ -1,15 +1,15 @@
-// routes/requestRoutes.js
-const express = require('express');
-const router = express.Router();
-const { 
+import express from 'express';
+import { 
   checkLinkStatus,
-  sendRequest,          // ✅ ADD THIS: Import the send function
+  sendRequest, 
   getPendingRequests, 
   updateRequestStatus, 
-  getMyPatients ,
-  getLinkedCaregiver,
-} = require('../controllers/requestController');
-const auth = require('../middleware/authMiddleware');
+  getMyPatients,
+  getLinkedCaregiver
+} from '../controllers/requestController.js';
+import auth from '../middleware/authMiddleware.js';
+
+const router = express.Router();
 
 // ✅ ADD THIS: Define the POST route
 router.post('/send', auth, sendRequest); 
@@ -21,4 +21,4 @@ router.get('/:userId', auth, getPendingRequests);
 router.patch('/:requestId', auth, updateRequestStatus);
 // For Patient to see their caregiver info
 
-module.exports = router;
+export default router;

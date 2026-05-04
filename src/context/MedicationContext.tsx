@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
 import { useUser } from './UserContext';
 import { Medication } from '../data/mockData';
@@ -6,13 +6,17 @@ import { Medication } from '../data/mockData';
 interface MedicationContextType {
   medications: Medication[];
   setMedications: React.Dispatch<React.SetStateAction<Medication[]>>;
-  fetchMeds: () => Promise<void>; // Aligned name
+  fetchMeds: (showLoading?: boolean) => Promise<void>;
   addMedication: (med: Omit<Medication, 'id'>) => Promise<void>;
   isLoading: boolean;
+  isSyncing: boolean; // Added to track background refreshes
   historyLogs: any[]; 
+  adherenceHistory: any[]; // Alias for UI compatibility
   setHistoryLogs: React.Dispatch<React.SetStateAction<any[]>>;
-  fetchAdherenceHistory: (patientId: string) => Promise<void>;
+  fetchAdherenceHistory: (patientId: string, silent?: boolean) => Promise<void>;
   refreshData: (patientId: string) => Promise<void>;
+  aiInsights: { level: string; insight: string; score: number } | null;
+  fetchAIInsights: (patientId: string, silent?: boolean) => Promise<void>;
 }
 
 const MedicationContext = createContext<MedicationContextType | undefined>(undefined);
@@ -21,10 +25,12 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [medications, setMedications] = useState<Medication[]>([]);
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const { userId, role, activePatient } = useUser();
+  const [aiInsights, setAiInsights] = useState(null);
 
-  // 1. Fetch Medications from MongoDB
-  const fetchMeds = async () => {
+  // 1. Fetch Medications - Wrapped in useCallback to prevent infinite loops
+  const fetchMeds = useCallback(async (showLoading = false) => {
     const targetId = role === 'caregiver' ? activePatient?._id : userId;
     
     if (!targetId) {
@@ -33,43 +39,66 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     try {
-      setIsLoading(true);
+      if (showLoading) setIsLoading(true);
+      else setIsSyncing(true);
+
       const res = await api.get(`/medications/patient/${targetId}`);
-      setMedications(res.data);
+      // Ensure each medication has a consistent 'id' field for the frontend
+      const formattedMeds = res.data.map((m: any) => ({ ...m, id: m._id }));
+      setMedications(formattedMeds);
     } catch (err) {
-      console.error("Failed to sync medications with MongoDB Atlas:", err);
+      console.error("Fetch failed:", err);
     } finally {
       setIsLoading(false);
+      setIsSyncing(false);
     }
-  };
+  }, [role, activePatient?._id, userId]);
 
-  // ✅ FIX: Changed setLoading to setIsLoading to match defined state
-  const fetchAdherenceHistory = async (patientId: string) => {
+  // 2. Fetch Adherence History
+  const fetchAdherenceHistory = useCallback(async (patientId: string, silent = false) => {
     if (!patientId) return;
     try {
-      setIsLoading(true); 
+      if (!silent) setIsLoading(true);
       const res = await api.get(`/medications/adherence-history/${patientId}`);
       setHistoryLogs(res.data);
     } catch (err) {
       console.error("Failed to fetch adherence history:", err);
     } finally {
-      setIsLoading(false); 
+      setIsLoading(false);
     }
-  };
+  }, []);
 
-  const refreshData = async (patientId: string) => {
+  // 3. Fetch AI Insights
+  const fetchAIInsights = useCallback(async (patientId: string, silent = false) => {
+    if (!patientId) return;
     try {
-      // Run both fetches in parallel for efficiency
+      if (!silent) setIsLoading(true);
+      const res = await api.get(`/medications/ai-insights/${patientId}`);
+      setAiInsights(res.data);
+    } catch (err) {
+      console.error("AI Insight fetch failed:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // 4. Global Refresh - Parallelizes calls without wiping the UI
+  const refreshData = useCallback(async (patientId: string) => {
+    if (!patientId) return;
+    try {
+      setIsSyncing(true);
       await Promise.all([
-        fetchMeds(),
-        fetchAdherenceHistory(patientId)
+        fetchMeds(false),
+        fetchAdherenceHistory(patientId, true),
+        fetchAIInsights(patientId, true)
       ]);
     } catch (err) {
-      console.error("Failed to refresh app data:", err);
+      console.error("Refresh failed:", err);
+    } finally {
+      setIsSyncing(false);
     }
-  };
+  }, [fetchMeds, fetchAdherenceHistory, fetchAIInsights]);
 
-  // 2. Add Medication to MongoDB
   const addMedication = async (newMedData: Omit<Medication, 'id'>) => {
     try {
       const response = await api.post('/medications', newMedData);
@@ -81,15 +110,24 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  // Sync effect
+  // Sync effect: Runs on mount and sets up polling
   useEffect(() => {
-    if (userId) {
-      fetchMeds();
-      // Polling every 3 seconds to keep data fresh across platforms
-      const interval = setInterval(fetchMeds, 3000); 
+    const targetId = role === 'caregiver' ? activePatient?._id : userId;
+    
+    if (targetId) {
+      // Initial Load
+      fetchMeds(true);
+      fetchAIInsights(targetId, true);
+      fetchAdherenceHistory(targetId, true);
+
+      // Background Polling (Every 5 seconds for stability)
+      const interval = setInterval(() => {
+        fetchMeds(false);
+      }, 5000); 
+
       return () => clearInterval(interval);
     }
-  }, [userId, activePatient, role]);
+  }, [userId, activePatient?._id, role, fetchMeds, fetchAIInsights, fetchAdherenceHistory]);
 
   return (
     <MedicationContext.Provider value={{ 
@@ -98,10 +136,14 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       fetchMeds, 
       addMedication,
       isLoading,
+      isSyncing,
       historyLogs,
+      adherenceHistory: historyLogs, // Alias for chart compatibility
       setHistoryLogs,
       fetchAdherenceHistory,
-      refreshData
+      refreshData,
+      aiInsights,
+      fetchAIInsights
     }}>
       {children}
     </MedicationContext.Provider>

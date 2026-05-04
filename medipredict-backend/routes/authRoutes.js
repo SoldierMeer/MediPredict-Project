@@ -1,12 +1,16 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { register, login } = require('../controllers/authController');
-const authController = require('../controllers/authController');
-// ✅ Add this line to import the middleware
-const authMiddleware = require('../middleware/authMiddleware');
+
+// 1. Named imports from your controller
+import { register, login, selectRole } from '../controllers/authController.js';
+
+// 2. Default import for your middleware (Ensuring .js extension)
+import auth from '../middleware/authMiddleware.js';
 
 router.post('/register', register);
 router.post('/login', login);
-router.post('/select-role', authMiddleware, authController.selectRole);
 
-module.exports = router;
+// 3. Use the specific imported 'selectRole' function instead of 'authController.selectRole'
+router.post('/select-role', auth, selectRole);
+
+export default router;

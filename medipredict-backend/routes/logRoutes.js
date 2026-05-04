@@ -1,9 +1,10 @@
-const express = require('express');
+import express from 'express';
+import { createLog } from '../controllers/logController.js';
+import auth from '../middleware/authMiddleware.js'; // Our Security Guard
+
 const router = express.Router();
-const { createLog } = require('../controllers/logController');
-const auth = require('../middleware/authMiddleware'); // Our Security Guard
 
 // POST /api/logs - Protected by JWT auth
 router.post('/', auth, createLog);
 
-module.exports = router;
+export default router;

@@ -16,7 +16,11 @@ const medicationSchema = new mongoose.Schema({
   isArchived: { type: Boolean, default: false },
   snoozeUntil: { type: String, default: null },
   snoozeCount: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  lastTakenDate: {
+    type: String, // Format: YYYY-MM-DD
+    default: null
+  }
 });
 
 module.exports = mongoose.model('Medication', medicationSchema);

@@ -1,6 +1,6 @@
-const AdherenceLog = require('../models/AdherenceLog');
+import AdherenceLog from '../models/AdherenceLog.js';
 
-exports.createLog = async (req, res) => {
+export const createLog = async (req, res) => {
   try {
     const { medicationName, scheduledTime, actualTakenTime, snoozeCount, status } = req.body;
 
