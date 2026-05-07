@@ -13,7 +13,14 @@ import 'dotenv/config';
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    "https://medipredict-app-iota.vercel.app", // 👈 The URL from your screenshot
+    "http://localhost:5173"
+  ],
+  credentials: true
+}));
+
 app.use(express.json()); // Essential for reading JSON from the frontend
 
 
