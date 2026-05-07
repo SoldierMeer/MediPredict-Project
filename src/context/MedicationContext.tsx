@@ -1,21 +1,51 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
 import { useUser } from './UserContext';
-import { Medication } from '../data/mockData';
+import axios from 'axios'; // Add this at the top
+
+
+// ✅ Define the robust Medication interface here to include MongoDB properties
+// frontend/src/context/MedicationContext.tsx
+
+// frontend/src/context/MedicationContext.tsx
+
+export interface Medication {
+  _id: string;            // ✅ Added for MongoDB compatibility
+  id: string;             // ✅ Added for frontend mapping
+  patientId: string;
+  name: string;
+  dosage: string;
+  quantity: string;
+  time: string;
+  category: string;
+  frequency: string;
+  status: 'upcoming' | 'taken' | 'missed' | 'late';
+  isTaken: boolean;
+  lastTakenDate: string | null;
+  snoozeCount: number;    // ✅ Added
+  snoozeUntil: string | null; // ✅ Added
+  isArchived: boolean;    // ✅ Added
+  selectedDays?: string[]; 
+}
 
 interface MedicationContextType {
   medications: Medication[];
   setMedications: React.Dispatch<React.SetStateAction<Medication[]>>;
   fetchMeds: (showLoading?: boolean) => Promise<void>;
-  addMedication: (med: Omit<Medication, 'id'>) => Promise<void>;
+  addMedication: (med: Omit<Medication, 'id' | '_id'>) => Promise<void>;
   isLoading: boolean;
-  isSyncing: boolean; // Added to track background refreshes
+  isSyncing: boolean;
   historyLogs: any[]; 
-  adherenceHistory: any[]; // Alias for UI compatibility
+  adherenceHistory: any[]; 
   setHistoryLogs: React.Dispatch<React.SetStateAction<any[]>>;
   fetchAdherenceHistory: (patientId: string, silent?: boolean) => Promise<void>;
   refreshData: (patientId: string) => Promise<void>;
-  aiInsights: { level: string; insight: string; score: number } | null;
+  aiInsights: { 
+    level: string; 
+    insight: string; 
+    score: number;
+    confidence?: number;
+  } | null;
   fetchAIInsights: (patientId: string, silent?: boolean) => Promise<void>;
 }
 
@@ -27,12 +57,10 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const { userId, role, activePatient } = useUser();
-  const [aiInsights, setAiInsights] = useState(null);
+  const [aiInsights, setAiInsights] = useState<MedicationContextType['aiInsights']>(null);
 
-  // 1. Fetch Medications - Wrapped in useCallback to prevent infinite loops
   const fetchMeds = useCallback(async (showLoading = false) => {
     const targetId = role === 'caregiver' ? activePatient?._id : userId;
-    
     if (!targetId) {
       setIsLoading(false);
       return;
@@ -43,8 +71,11 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       else setIsSyncing(true);
 
       const res = await api.get(`/medications/patient/${targetId}`);
-      // Ensure each medication has a consistent 'id' field for the frontend
-      const formattedMeds = res.data.map((m: any) => ({ ...m, id: m._id }));
+      // ✅ Mapping both _id and id ensures compatibility across your components
+      const formattedMeds = res.data.map((m: any) => ({ 
+        ...m, 
+        id: m._id 
+      }));
       setMedications(formattedMeds);
     } catch (err) {
       console.error("Fetch failed:", err);
@@ -54,35 +85,39 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [role, activePatient?._id, userId]);
 
-  // 2. Fetch Adherence History
   const fetchAdherenceHistory = useCallback(async (patientId: string, silent = false) => {
     if (!patientId) return;
+    
+    // ✅ Sanitize ID: Remove any non-alphanumeric characters like trailing underscores
+    const cleanId = patientId.replace(/[^a-zA-Z0-9]/g, '');
+  
     try {
       if (!silent) setIsLoading(true);
-      const res = await api.get(`/medications/adherence-history/${patientId}`);
+      const res = await api.get(`/medications/adherence-history/${cleanId}`);
       setHistoryLogs(res.data);
     } catch (err) {
-      console.error("Failed to fetch adherence history:", err);
+      console.error("Failed to fetch history:", err);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // 3. Fetch AI Insights
-  const fetchAIInsights = useCallback(async (patientId: string, silent = false) => {
+  const fetchAIInsights = useCallback(async (patientId: string, silent = false, signal?: AbortSignal) => {
     if (!patientId) return;
     try {
       if (!silent) setIsLoading(true);
-      const res = await api.get(`/medications/ai-insights/${patientId}`);
+      // ✅ Pass the signal to Axios
+      const res = await api.get(`/medications/ai-insights/${patientId}`, { signal });
       setAiInsights(res.data);
     } catch (err) {
+      // ✅ Ignore cancellation errors in the console
+      if (axios.isCancel(err)) return; 
       console.error("AI Insight fetch failed:", err);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // 4. Global Refresh - Parallelizes calls without wiping the UI
   const refreshData = useCallback(async (patientId: string) => {
     if (!patientId) return;
     try {
@@ -99,7 +134,7 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [fetchMeds, fetchAdherenceHistory, fetchAIInsights]);
 
-  const addMedication = async (newMedData: Omit<Medication, 'id'>) => {
+  const addMedication = async (newMedData: Omit<Medication, 'id' | '_id'>) => {
     try {
       const response = await api.post('/medications', newMedData);
       const savedMed = { ...response.data, id: response.data._id };
@@ -110,25 +145,28 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  // Sync effect: Runs on mount and sets up polling
   useEffect(() => {
     const targetId = role === 'caregiver' ? activePatient?._id : userId;
     
     if (targetId) {
-      // Initial Load
+      const controller = new AbortController(); // ✅ Create controller
+      
       fetchMeds(true);
-      fetchAIInsights(targetId, true);
+      // ✅ Pass the signal
+      fetchAIInsights(targetId, true, controller.signal); 
       fetchAdherenceHistory(targetId, true);
-
-      // Background Polling (Every 5 seconds for stability)
+  
       const interval = setInterval(() => {
         fetchMeds(false);
       }, 5000); 
-
-      return () => clearInterval(interval);
+  
+      return () => {
+        controller.abort(); // ✅ Cancel pending request on unmount
+        clearInterval(interval);
+      };
     }
   }, [userId, activePatient?._id, role, fetchMeds, fetchAIInsights, fetchAdherenceHistory]);
-
+  
   return (
     <MedicationContext.Provider value={{ 
       medications, 
@@ -138,7 +176,7 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       isLoading,
       isSyncing,
       historyLogs,
-      adherenceHistory: historyLogs, // Alias for chart compatibility
+      adherenceHistory: historyLogs, 
       setHistoryLogs,
       fetchAdherenceHistory,
       refreshData,

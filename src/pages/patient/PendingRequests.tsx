@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Clock, UserPlus } from 'lucide-react';
+import { Check, X, Clock, UserPlus, Bell } from 'lucide-react'; // Added Bell
+import { cn } from '../../utils/cn';
 import api from '../../utils/api';
 
 interface Request {
   _id: string;
   caregiverName: string;
+  type: 'link' | 'reminder'; // ✅ Added type
+  message?: string;          // ✅ Added message
   status: string;
 }
 
@@ -15,7 +18,6 @@ const PendingRequests: React.FC<{ userId: string | null }> = ({ userId }) => {
 
   const fetchRequests = async () => {
     try {
-      // ✅ Hits the GET /api/requests/:userId endpoint
       const res = await api.get(`/requests/${userId}`);
       setRequests(res.data);
     } catch (err) {
@@ -29,73 +31,92 @@ const PendingRequests: React.FC<{ userId: string | null }> = ({ userId }) => {
     if (userId) fetchRequests();
   }, [userId]);
 
-  const handleAction = async (requestId: string, status: 'accepted' | 'rejected') => {
+  const handleAction = async (req: Request, action: 'confirm' | 'reject') => {
     try {
-      // ✅ Hits the PATCH /api/requests/:requestId endpoint
-      await api.patch(`/requests/${requestId}`, { status });
+      const isLink = req.type === 'link';
       
-      // Remove the request from local state immediately
-      setRequests(prev => prev.filter(r => r._id !== requestId));
+      // ✅ Logic: Links get 'accepted', Reminders get 'dismissed'
+      const newStatus = action === 'reject' 
+        ? 'rejected' 
+        : (isLink ? 'accepted' : 'dismissed');
+
+      await api.patch(`/requests/${req._id}`, { status: newStatus });
       
-      if (status === 'accepted') {
+      setRequests(prev => prev.filter(r => r._id !== req._id));
+      
+      if (newStatus === 'accepted') {
         alert("Caregiver added to your circle! Refreshing...");
-        window.location.reload(); // Refresh to show the new card in CaregiverInfo
+        window.location.reload(); 
+      } else if (newStatus === 'dismissed') {
+        // Just a subtle feedback for reminders
+        console.log("Reminder acknowledged");
       }
     } catch (err) {
       alert("Failed to update request.");
     }
   };
 
-  if (loading) return <div className="p-4 text-xs text-gray-400">Checking for requests...</div>;
+  if (loading) return <div className="p-4 text-xs text-gray-400 animate-pulse">Syncing requests...</div>;
 
-  if (requests.length === 0) {
-    return (
-      <div className="bg-gray-50/50 border border-dashed border-gray-200 rounded-3xl p-6 text-center">
-        <p className="text-sm text-gray-400 font-medium">No new connection requests.</p>
-      </div>
-    );
-  }
+  if (requests.length === 0) return null; // Hide section if empty
 
   return (
     <div className="space-y-3">
       <AnimatePresence>
-        {requests.map((req) => (
-          <motion.div
-            key={req._id}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-white border border-blue-50 p-4 rounded-[24px] shadow-sm flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
-                <UserPlus className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-on-surface">{req.caregiverName}</p>
-                <div className="flex items-center gap-1 text-[10px] text-gray-400 uppercase font-black">
-                  <Clock className="w-3 h-3" />
-                  <span>Pending Link</span>
+        {requests.map((req) => {
+          const isLink = req.type === 'link';
+          
+          return (
+            <motion.div
+              key={req._id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={cn(
+                "bg-white border p-5 rounded-[32px] soft-shadow flex items-center justify-between transition-colors",
+                isLink ? "border-blue-50" : "border-orange-50"
+              )}
+            >
+              <div className="flex items-center gap-4">
+                {/* ✅ Dynamic Icon and Color */}
+                <div className={cn(
+                  "w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm",
+                  isLink ? "bg-primary/10 text-primary" : "bg-orange-100 text-orange-600"
+                )}>
+                  {isLink ? <UserPlus className="w-6 h-6" /> : <Bell className="w-6 h-6" />}
+                </div>
+
+                <div>
+                  <h4 className={cn(
+                    "text-[10px] font-black uppercase tracking-[0.2em] mb-1",
+                    isLink ? "text-primary/60" : "text-orange-600/60"
+                  )}>
+                    {isLink ? "Connection Request" : "Caregiver Nudge"}
+                  </h4>
+                  <p className="text-sm font-bold text-text-primary leading-tight">
+                    {/* ✅ Show custom message for reminders, or name for links */}
+                    {isLink ? `${req.caregiverName} wants to link` : req.message}
+                  </p>
                 </div>
               </div>
-            </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleAction(req._id, 'accepted')}
-                className="w-10 h-10 bg-success/10 text-success rounded-full flex items-center justify-center hover:bg-success hover:text-white transition-all"
-              >
-                <Check className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => handleAction(req._id, 'rejected')}
-                className="w-10 h-10 bg-error/10 text-error rounded-full flex items-center justify-center hover:bg-error hover:text-white transition-all"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </motion.div>
-        ))}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleAction(req, 'confirm')}
+                  className="w-10 h-10 bg-green-50 text-success rounded-full flex items-center justify-center hover:bg-success hover:text-white transition-all active:scale-90"
+                >
+                  <Check className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => handleAction(req, 'reject')}
+                  className="w-10 h-10 bg-red-50 text-error rounded-full flex items-center justify-center hover:bg-error hover:text-white transition-all active:scale-90"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          );
+        })}
       </AnimatePresence>
     </div>
   );

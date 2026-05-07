@@ -1,44 +1,65 @@
 import React, { useMemo } from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { AlertCircle, TrendingUp, Pill, Timer, Lightbulb, ChevronRight, Share2, CheckCircle2, ShieldAlert, Activity } from 'lucide-react';
+import { Info, AlertCircle, TrendingUp, Pill, Timer, Lightbulb, ChevronRight, Share2, CheckCircle2, ShieldAlert, Activity, BrainCircuit } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { useMeds } from '../../context/MedicationContext';
 
 const PatientInsights: React.FC = () => {
   const { aiInsights, isLoading, adherenceHistory } = useMeds();
 
-  // ✅ Transformation: Convert raw logs into a 7-day trend for the chart
-  const trendData = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const today = new Date();
+  // Inside PatientInsights.tsx
+
+// PatientInsights.tsx (inside useMemo)
+
+const trendData = useMemo(() => {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = new Date();
+  
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(today.getDate() - (6 - i));
+    const dateStr = d.toLocaleDateString('en-CA'); 
+
+    const dayLogs = adherenceHistory?.filter(log => log.dateString === dateStr) || [];
     
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(today.getDate() - (6 - i));
-      const dateStr = d.toISOString().split('T')[0];
-      const dayName = days[d.getDay()];
+    if (dayLogs.length === 0) return { day: days[d.getDay()], rate: 0 };
 
-      const dayLogs = adherenceHistory?.filter(log => log.date === dateStr) || [];
-      const total = dayLogs.length;
-      
-      const weightedScore = dayLogs.reduce((acc, log) => {
-        if (log.status === 'taken') return acc + 1;
-        if (log.status === 'late') return acc + 0.7; // AI-aligned weighting
-        return acc;
-      }, 0);
+    // 1. ✅ ADD LATENCY PENALTIES: Ensures 8h delays show as 0% on the graph
+    const dayPoints = dayLogs.reduce((acc, log) => {
+      const lat = log.latencyMinutes || 0;
+      if (log.status === 'missed' || lat >= 480) return acc + 0;
+      if (lat > 60) return acc + 0.5;
+      return acc + 1;
+    }, 0);
 
-      const rate = total === 0 ? 0 : Math.round((weightedScore / total) * 100);
-      return { day: dayName, rate, date: dateStr };
+    let score = Math.round((dayPoints / dayLogs.length) * 100);
+
+    // 2. Toxicity Check (Already mostly correct, synced for safety)
+    const timestamps = dayLogs.map(l => new Date(l.timestamp).getTime());
+    let dayToxicity = false;
+    dayLogs.forEach(log => {
+      const sameTimeCount = timestamps.filter(t => 
+        Math.abs(t - new Date(log.timestamp).getTime()) < 10 * 60 * 1000
+      ).length;
+      if (sameTimeCount >= 4) dayToxicity = true;
     });
-  }, [adherenceHistory]);
 
+    if (dayToxicity) score = Math.min(score, 35);
+
+    return { day: days[d.getDay()], rate: score };
+  });
+}, [adherenceHistory]);
+
+
+  // 2. UI Helper Functions (Ensure these are defined!)
   const getRiskStyles = (level: string) => {
     switch (level) {
       case 'Critical':
         return {
           bg: "bg-red-50/50 border-red-200",
           text: "text-red-600",
+          bar: "bg-red-600",
           icon: <ShieldAlert className="w-6 h-6 text-red-600" />,
           title: "Critical Intervention Required"
         };
@@ -46,6 +67,7 @@ const PatientInsights: React.FC = () => {
         return {
           bg: "bg-orange-50/50 border-orange-200",
           text: "text-orange-600",
+          bar: "bg-orange-600",
           icon: <AlertCircle className="w-6 h-6 text-orange-600" />,
           title: "Adherence Warning"
         };
@@ -53,13 +75,53 @@ const PatientInsights: React.FC = () => {
         return {
           bg: "bg-blue-50/50 border-blue-200",
           text: "text-primary",
+          bar: "bg-primary",
           icon: <CheckCircle2 className="w-6 h-6 text-primary" />,
           title: "System Stable"
         };
     }
   };
 
-  const risk = getRiskStyles(aiInsights?.level || 'Stable');
+  // ✅ NEW: Dynamic Hex Colors for the Chart
+  const getChartColor = (level: string) => {
+    if (level === 'Critical') return '#dc2626'; // tailwind red-600
+    if (level === 'Warning') return '#ea580c';  // tailwind orange-600
+    return '#2563eb';                           // tailwind blue-600
+  };
+
+  // ✅ NEW: Dynamic Labels for the Trend Card
+  const getTrendLabel = (level: string) => {
+    if (level === 'Critical') return { text: 'Severe Risk', color: 'text-red-600' };
+    if (level === 'Warning') return { text: 'At Risk', color: 'text-orange-600' };
+    return { text: 'Healthy Pattern', color: 'text-success' };
+  };
+
+  const handleShareReport = async () => {
+    if (!aiInsights) return;
+  
+    const reportDate = new Date().toLocaleDateString();
+    const reportText = `📋 MediPredict Health Report (${reportDate}):\n-----------------------------------\n✅ Adherence Score: ${aiInsights.score}%\n⚠️ Risk Level: ${aiInsights.level}\n💡 AI Insight: ${aiInsights.insight}\n-----------------------------------\nGenerated by MediPredict AI Engine.`;
+  
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'MediPredict Health Report', text: reportText });
+      } catch (err) {
+        console.log('Share cancelled or failed:', err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(reportText);
+        alert('Report copied to clipboard! Share it manually via email or message.');
+      } catch (err) {
+        console.error('Failed to copy report:', err);
+      }
+    }
+  };
+
+  const currentLevel = aiInsights?.level || 'Stable';
+  const risk = getRiskStyles(currentLevel);
+  const chartColor = getChartColor(currentLevel);
+  const trendConfig = getTrendLabel(currentLevel);
 
   if (isLoading) return <div className="p-10 text-center font-bold text-primary animate-pulse">Syncing AI Models...</div>;
 
@@ -75,15 +137,22 @@ const PatientInsights: React.FC = () => {
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         className={cn(
-          "relative overflow-hidden rounded-[32px] border p-6 flex gap-5 items-start shadow-sm",
+          "relative overflow-hidden rounded-[32px] border p-6 flex gap-5 items-start shadow-sm transition-colors duration-500",
           risk.bg
         )}
       >
         <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-white flex items-center justify-center shadow-sm">
           {risk.icon}
         </div>
-        <div className="space-y-1">
-          <h3 className={cn("text-lg font-bold", risk.text)}>{risk.title}</h3>
+        <div className="flex-grow space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className={cn("text-lg font-bold", risk.text)}>{risk.title}</h3>
+            
+            <div className="flex items-center gap-1.5 bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full border border-black/5 shadow-sm">
+              <span className="text-[10px] font-black text-text-secondary uppercase tracking-widest">Confidence</span>
+              <span className={cn("text-xs font-black", risk.text)}>{aiInsights?.confidence || 0}%</span>
+            </div>
+          </div>
           <p className="text-sm text-gray-700 leading-relaxed font-medium">
             {aiInsights?.insight || "Your adherence pattern is currently within optimal parameters."}
           </p>
@@ -94,7 +163,10 @@ const PatientInsights: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Large Trend Card */}
-        <section className="md:col-span-2 bg-white rounded-[32px] p-8 soft-shadow border border-gray-50 flex flex-col gap-6">
+        <section className={cn(
+          "md:col-span-2 bg-white rounded-[32px] p-8 soft-shadow border flex flex-col gap-6 transition-colors duration-500",
+          currentLevel === 'Critical' ? "border-red-100" : currentLevel === 'Warning' ? "border-orange-100" : "border-gray-50"
+        )}>
           <div className="flex justify-between items-start">
             <div>
               <h2 className="text-sm font-bold text-text-secondary uppercase tracking-widest flex items-center gap-2">
@@ -103,11 +175,13 @@ const PatientInsights: React.FC = () => {
               <p className="text-xs text-gray-400 font-medium">Historical consistency analysis</p>
             </div>
             <div className="text-right">
-              <span className="text-4xl font-black text-primary font-display leading-none">
+              {/* ✅ FIX: Dynamic Color for 35% */}
+              <span className={cn("text-4xl font-black font-display leading-none transition-colors", risk.text)}>
                 {aiInsights?.score || 0}%
               </span>
-              <p className="text-[10px] text-success font-black uppercase tracking-wider mt-1">
-                Healthy Pattern
+              {/* ✅ FIX: Dynamic "Healthy Pattern" / "Severe Risk" label */}
+              <p className={cn("text-[10px] font-black uppercase tracking-wider mt-1 transition-colors", trendConfig.color)}>
+                {trendConfig.text}
               </p>
             </div>
           </div>
@@ -117,8 +191,9 @@ const PatientInsights: React.FC = () => {
               <AreaChart data={trendData}>
                 <defs>
                   <linearGradient id="colorRate" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                    {/* ✅ FIX: Dynamic Gradient Color */}
+                    <stop offset="5%" stopColor={chartColor} stopOpacity={0.25}/>
+                    <stop offset="95%" stopColor={chartColor} stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
@@ -133,11 +208,12 @@ const PatientInsights: React.FC = () => {
                 <Tooltip 
                   cursor={{ stroke: '#e2e8f0', strokeWidth: 2 }}
                   contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                  formatter={(value: number) => [`${value}%`, 'Adherence']}
                 />
                 <Area 
                   type="monotone" 
                   dataKey="rate" 
-                  stroke="#2563eb" 
+                  stroke={chartColor} // ✅ FIX: Dynamic Line Color
                   strokeWidth={4} 
                   fillOpacity={1} 
                   fill="url(#colorRate)" 
@@ -150,33 +226,59 @@ const PatientInsights: React.FC = () => {
 
         {/* Small Metric Stack */}
         <div className="flex flex-col gap-6">
-          <section className="bg-white rounded-[32px] p-6 soft-shadow border border-gray-50 flex-1 flex flex-col justify-between group">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+          {/* ✅ FIX: Dynamic Consistency Score Card */}
+          <section className={cn(
+            "bg-white rounded-[32px] p-6 soft-shadow border flex-1 flex flex-col justify-between group transition-colors duration-500",
+            currentLevel === 'Critical' ? "border-red-100" : currentLevel === 'Warning' ? "border-orange-100" : "border-gray-50"
+          )}>
+            <div className={cn(
+              "w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110",
+              currentLevel === 'Critical' ? "bg-red-50 text-red-600" : 
+              currentLevel === 'Warning' ? "bg-orange-50 text-orange-600" : "bg-blue-50 text-primary"
+            )}>
               <Pill className="w-6 h-6" />
             </div>
             <div>
               <h4 className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Consistency Score</h4>
-              <p className="text-3xl font-black text-text-primary">
+              <p className={cn("text-3xl font-black transition-colors", risk.text)}>
                 {aiInsights?.score || '0'} <span className="text-sm text-gray-400 font-bold">/ 100</span>
               </p>
             </div>
           </section>
 
           <section className={cn(
-            "rounded-[32px] p-6 soft-shadow border flex-1 flex flex-col justify-between transition-colors",
-            aiInsights?.level === 'Warning' ? "bg-orange-50/30 border-orange-100" : "bg-white border-gray-50"
+            "rounded-[32px] p-6 soft-shadow border flex-1 flex flex-col justify-between transition-all duration-500",
+            currentLevel === 'Warning' ? "bg-orange-50/30 border-orange-100" : 
+            currentLevel === 'Critical' ? "bg-red-50/30 border-red-100" : "bg-white border-gray-50"
           )}>
             <div className={cn(
               "w-12 h-12 rounded-2xl flex items-center justify-center",
-              aiInsights?.level === 'Warning' ? "bg-orange-100 text-orange-600" : "bg-green-50 text-success"
+              currentLevel === 'Warning' ? "bg-orange-100 text-orange-600" : 
+              currentLevel === 'Critical' ? "bg-red-100 text-red-600" : "bg-green-50 text-success"
             )}>
               <Timer className="w-6 h-6" />
             </div>
-            <div>
+            <div className="space-y-2">
               <h4 className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Risk Level</h4>
               <p className={cn("text-3xl font-black", risk.text)}>
-                {aiInsights?.level || 'Stable'}
+                {currentLevel}
               </p>
+              
+              <div className="space-y-1 mt-2">
+                <div className="flex justify-between items-center text-[9px] font-black text-gray-400 uppercase tracking-tighter">
+                  <span>ML Certainty</span>
+                  <span>{aiInsights?.confidence ?? 0}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                  <motion.div 
+                    key={aiInsights?.confidence} 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${aiInsights?.confidence ?? 0}%` }}
+                    transition={{ duration: 1.2, ease: "easeOut" }}
+                    className={cn("h-full transition-colors duration-500", risk.bar)} 
+                  />
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -185,21 +287,34 @@ const PatientInsights: React.FC = () => {
       {/* AI Advisory Section */}
       <section className="space-y-4">
         <h3 className="text-xl font-bold text-text-primary px-1">AI Health Advisory</h3>
-        <div className="bg-white rounded-[32px] p-6 soft-shadow border border-gray-50 flex gap-5 items-center">
-          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-             <Lightbulb className="w-7 h-7 text-primary" />
+        <div className={cn(
+          "bg-white rounded-[32px] p-6 soft-shadow border flex gap-5 items-center transition-colors duration-500",
+          currentLevel === 'Critical' ? "border-red-100" : currentLevel === 'Warning' ? "border-orange-100" : "border-gray-50"
+        )}>
+          {/* ✅ FIX: Dynamic Lightbulb Icon */}
+          <div className={cn(
+            "w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 transition-colors",
+            currentLevel === 'Critical' ? "bg-red-50 text-red-600" : 
+            currentLevel === 'Warning' ? "bg-orange-50 text-orange-600" : "bg-primary/10 text-primary"
+          )}>
+              <Lightbulb className="w-7 h-7" />
           </div>
           <div className="space-y-1">
             <p className="text-sm text-text-primary font-bold leading-relaxed">
               {aiInsights?.insight || "Maintain your current pace to reach a 98% adherence rate by next week."}
             </p>
-            <p className="text-[10px] text-primary font-black uppercase tracking-widest flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5" /> Real-time heuristic insight
+            <p className={cn(
+              "text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5",
+              risk.text
+            )}>
+              <BrainCircuit className="w-3.5 h-3.5" /> Predictive ML Analysis
             </p>
           </div>
         </div>
 
-        <button className="w-full bg-white rounded-[24px] p-5 border border-gray-100 soft-shadow flex items-center justify-between hover:bg-gray-50 transition-all active:scale-[0.98]">
+        <button 
+        onClick={handleShareReport}
+        className="w-full bg-white rounded-[24px] p-5 border border-gray-100 soft-shadow flex items-center justify-between hover:bg-gray-50 transition-all active:scale-[0.98]">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-400">
               <Share2 className="w-5 h-5" />

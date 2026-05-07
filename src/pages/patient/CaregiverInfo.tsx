@@ -3,8 +3,8 @@ import { motion } from 'framer-motion';
 import { useUser } from '@/src/context/UserContext';
 import api from '@/src/utils/api';
 import { 
-  Phone, Mail, MapPin, CheckCircle2, 
-  MessageCircle, Share2, Info, UserPlus 
+  Phone, Mail, CheckCircle2, 
+  Share2, Info, UserPlus, BrainCircuit 
 } from 'lucide-react';
 import PendingRequests from './PendingRequests';
 
@@ -24,7 +24,6 @@ const CaregiverInfo: React.FC = () => {
     const fetchCaregivers = async () => {
       try {
         const res = await api.get('/requests/my-caregiver');
-        // ✅ Ensure we always treat the response as an array
         const data = Array.isArray(res.data) ? res.data : [res.data];
         setCaregivers(data);
       } catch (err) {
@@ -38,6 +37,27 @@ const CaregiverInfo: React.FC = () => {
     if (userId) fetchCaregivers();
   }, [userId]);
 
+  // ✅ Step 3 Logic: Share summary with the whole circle
+  const handleShareWithCircle = async () => {
+    const date = new Date().toLocaleDateString();
+    const text = `🏥 MediPredict Care Circle Update (${date})\n\nPatient is currently being monitored. All adherence logs are synced and available in the dashboard.`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'MediPredict Care Circle Update',
+          text: text,
+          url: window.location.origin // Link to the app
+        });
+      } catch (err) {
+        console.log('Share failed:', err);
+      }
+    } else {
+      navigator.clipboard.writeText(text);
+      alert("Update summary copied to clipboard!");
+    }
+  };
+
   if (loading) return <div className="p-8 text-center text-text-secondary">Loading care circle...</div>;
 
   return (
@@ -47,7 +67,6 @@ const CaregiverInfo: React.FC = () => {
         <p className="text-base text-text-secondary">Your team of verified caregivers.</p>
       </div>
   
-      {/* 1. New Connection Requests Section */}
       <section className="space-y-4 mb-8">
         <div className="flex items-center gap-2 px-1">
           <UserPlus className="w-4 h-4 text-primary" />
@@ -56,7 +75,6 @@ const CaregiverInfo: React.FC = () => {
         <PendingRequests userId={userId} />
       </section>
   
-      {/* 2. Caregiver List / Cards */}
       {caregivers.length === 0 ? (
         <div className="p-8 bg-blue-50/50 rounded-[32px] border border-blue-100 text-center">
           <p className="text-primary font-bold">No linked caregiver found.</p>
@@ -70,7 +88,6 @@ const CaregiverInfo: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-6 mb-10"
           >
-            {/* Profile Card */}
             <section className="bg-white rounded-[32px] p-8 shadow-[0_4px_20px_rgba(90,155,213,0.08)] overflow-hidden relative border border-blue-50/50">
               <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16"></div>
               
@@ -88,8 +105,8 @@ const CaregiverInfo: React.FC = () => {
               </div>
         
               <div className="space-y-4 relative z-10">
-                <div className="flex items-center gap-4 p-4 bg-[#f8f9fe] rounded-2xl border border-slate-50 group hover:border-primary/20 transition-all">
-                  <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-white shadow-sm text-primary group-hover:bg-primary group-hover:text-white transition-all">
+                <div className="flex items-center gap-4 p-4 bg-[#f8f9fe] rounded-2xl border border-slate-50">
+                  <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-white shadow-sm text-primary">
                     <Phone className="w-5 h-5" />
                   </div>
                   <div>
@@ -98,8 +115,8 @@ const CaregiverInfo: React.FC = () => {
                   </div>
                 </div>
         
-                <div className="flex items-center gap-4 p-4 bg-[#f8f9fe] rounded-2xl border border-slate-50 group hover:border-primary/20 transition-all">
-                  <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-white shadow-sm text-primary group-hover:bg-primary group-hover:text-white transition-all">
+                <div className="flex items-center gap-4 p-4 bg-[#f8f9fe] rounded-2xl border border-slate-50">
+                  <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-white shadow-sm text-primary">
                     <Mail className="w-5 h-5" />
                   </div>
                   <div>
@@ -110,18 +127,17 @@ const CaregiverInfo: React.FC = () => {
               </div>
             </section>
         
-            {/* Actions for THIS specific caregiver */}
             <div className="flex flex-col gap-4 pt-2">
+              {/* ✅ Step 2 Fix: Changed from mailto to tel: and updated text/icon */}
               <a 
-                href={`mailto:${caregiver.email}`} 
+                href={`tel:${caregiver.phoneNumber}`} 
                 className="w-full h-16 bg-primary text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-blue-700 active:scale-[0.98] transition-all"
               >
-                <MessageCircle className="w-5 h-5" />
-                Message {caregiver.name.split(' ')[0]}
+                <Phone className="w-5 h-5" />
+                Call {caregiver.name.split(' ')[0]}
               </a>
             </div>
         
-            {/* Notification Note */}
             <div className="p-5 bg-blue-50/50 rounded-2xl border border-blue-100/50">
               <div className="flex gap-4">
                 <Info className="text-primary w-6 h-6 shrink-0" />
@@ -134,9 +150,12 @@ const CaregiverInfo: React.FC = () => {
         ))
       )}
 
-      {/* Global Action (Shows only if at least one caregiver exists) */}
+      {/* ✅ Step 3 Fix: Attached share logic */}
       {caregivers.length > 0 && (
-        <button className="w-full h-16 bg-white text-primary border border-primary/20 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-blue-50 active:scale-[0.98] transition-all">
+        <button 
+          onClick={handleShareWithCircle}
+          className="w-full h-16 bg-white text-primary border border-primary/20 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-blue-50 active:scale-[0.98] transition-all"
+        >
           <Share2 className="w-5 h-5" />
           Share Health Logs with Circle
         </button>

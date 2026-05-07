@@ -1,9 +1,12 @@
-// Medications.js
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const medicationSchema = new mongoose.Schema({
-  // ✅ FIX: Change 'userId' to 'patientId'
-  patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, 
+  // ✅ Linked to the User model for relationship queries
+  patientId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  }, 
   name: { type: String, required: true },
   dosage: { type: String, required: true },
   quantity: { type: String, required: true },
@@ -12,7 +15,11 @@ const medicationSchema = new mongoose.Schema({
   frequency: { type: String, required: true },
   selectedDays: { type: [String], default: [] },
   isTaken: { type: Boolean, default: false },
-  status: { type: String, default: 'upcoming' },
+  status: { 
+    type: String, 
+    enum: ['upcoming', 'taken', 'missed', 'late', 'snoozed'], 
+    default: 'upcoming' 
+  },
   isArchived: { type: Boolean, default: false },
   snoozeUntil: { type: String, default: null },
   snoozeCount: { type: Number, default: 0 },
@@ -23,4 +30,6 @@ const medicationSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('Medication', medicationSchema);
+// ✅ Use ES Module export for consistency with your controllers
+const Medication = mongoose.model('Medication', medicationSchema);
+export default Medication;

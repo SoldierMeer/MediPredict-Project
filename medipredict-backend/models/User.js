@@ -24,8 +24,10 @@ const userSchema = new mongoose.Schema({
     sparse: true
   },
 
-  adherenceRate: { type: Number, default: 0 },
-  riskLevel: { type: String, default: 'Low' },
+  adherenceScore: { type: Number, default: 0 }, // Changed from adherenceRate
+  latestRiskLevel: { type: String, default: 'Stable' }, // Changed from riskLevel
+  latestRiskInsight: { type: String, default: 'Optimal management detected.' },
+
   createdAt: { type: Date, default: Date.now }
 });
 

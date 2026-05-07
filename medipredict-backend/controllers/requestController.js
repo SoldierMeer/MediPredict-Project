@@ -79,17 +79,45 @@ export const getPendingRequests = async (req, res) => {
 
 // 3. Patient accepts or rejects a request
 // PATCH /api/requests/:requestId
+// backend/controllers/requestController.js
+
 export const updateRequestStatus = async (req, res) => {
+  const { requestId } = req.params;
+  const { status } = req.body;
+
   try {
-    const { status } = req.body;
-    const request = await Request.findByIdAndUpdate(
-      req.params.requestId, 
-      { status }, 
-      { new: true }
-    );
-    res.json({ message: `Request ${status}`, request });
+    const request = await Request.findById(requestId);
+    if (!request) return res.status(404).json({ message: "Request not found" });
+
+    if (status === 'accepted' && request.type === 'link') {
+      // ✅ 1. PREVENT DUPLICATES: Check if this specific link already exists
+      const existingLink = await Link.findOne({
+        patientId: request.patientId,
+        caregiverId: request.caregiverId
+      });
+
+      if (existingLink) {
+        // If it exists, just update the request status and don't create a new link
+        request.status = 'accepted';
+        await request.save();
+        return res.status(200).json({ message: "Caregiver already linked." });
+      }
+
+      // ✅ 2. Only create a new link if it DOESN'T exist
+      const newLink = new Link({
+        patientId: request.patientId,
+        caregiverId: request.caregiverId
+      });
+      await newLink.save();
+    }
+
+    // Update the request status normally
+    request.status = status;
+    await request.save();
+
+    res.status(200).json({ message: `Request ${status}` });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -113,27 +141,27 @@ export const getMyPatients = async (req, res) => {
   }
 };
 
-export const selectRole = async (req, res) => {
-    try {
-      const { role } = req.body;
-      const userId = req.user.userId;
+// export const selectRole = async (req, res) => {
+//     try {
+//       const { role } = req.body;
+//       const userId = req.user.userId;
 
-      let updateData = { role };
+//       let updateData = { role };
 
-      if (role === 'patient') {
-        const user = await User.findById(userId);
-        // ✅ Only generate a code if they don't have one yet
-        if (!user.patientCode) {
-          updateData.patientCode = `MP-${Math.floor(1000 + Math.random() * 9000)}`;
-        }
-      }
+//       if (role === 'patient') {
+//         const user = await User.findById(userId);
+//         // ✅ Only generate a code if they don't have one yet
+//         if (!user.patientCode) {
+//           updateData.patientCode = `MP-${Math.floor(1000 + Math.random() * 9000)}`;
+//         }
+//       }
 
-      const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true });
-      res.json({ message: "Profile finalized!", user: updatedUser });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-};
+//       const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true });
+//       res.json({ message: "Profile finalized!", user: updatedUser });
+//     } catch (error) {
+//       res.status(500).json({ error: error.message });
+//     }
+// };
 
 // controllers/requestController.js
 
@@ -179,5 +207,41 @@ export const getLinkedCaregiver = async (req, res) => {
     res.json(caregivers); 
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+// backend/controllers/requestController.js
+
+export const sendReminder = async (req, res) => {
+  try {
+    const { patientId } = req.body;
+    const caregiverId = req.user.id; // From auth middleware
+
+    // 1. Check if a pending reminder already exists to prevent spamming
+    const existingReminder = await Request.findOne({
+      patientId,
+      caregiverId,
+      type: 'reminder',
+      status: 'pending'
+    });
+
+    if (existingReminder) {
+      return res.status(400).json({ message: "A reminder is already pending for this patient." });
+    }
+
+    // 2. Create the new reminder request
+    const newReminder = new Request({
+      patientId,
+      caregiverId,
+      type: 'reminder',
+      status: 'pending',
+      message: "Please review your medication schedule. Your caregiver is concerned."
+    });
+
+    await newReminder.save();
+
+    res.status(201).json({ message: "Reminder sent successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };

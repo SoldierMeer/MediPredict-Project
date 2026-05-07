@@ -102,3 +102,33 @@ export const selectRole = async (req, res) => {
       res.status(500).json({ error: error.message });
     }
 };
+
+export const updateProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, phone, dob } = req.body;
+
+    // Find the user and update their details
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { name, phone, dob },
+      { new: true, runValidators: true } // 'new: true' returns the updated document
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user: {
+        name: updatedUser.name,
+        phone: updatedUser.phone,
+        dob: updatedUser.dob
+      }
+    });
+  } catch (error) {
+    console.error("Profile update error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

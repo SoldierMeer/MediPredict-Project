@@ -5,6 +5,7 @@
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
 
+  /* --- Light Mode Colors (Base) --- */
   --color-primary: #004ac6;
   --color-primary-container: #2563eb;
   --color-on-primary: #ffffff;
@@ -24,19 +25,48 @@
   --color-warning: #F59E0B;
   --color-alert: #EF4444;
   --color-error: #ba1a1a;
+  
+  --color-app-bg: #faf8ff;
 }
 
+/* --- Dark Mode Overrides (Moved outside @theme) --- */
 @layer base {
+  .dark {
+    --color-primary: #4d89ff;
+    --color-primary-container: #1e3a8a;
+    --color-on-primary: #ffffff;
+
+    --color-surface-main: #0f172a;
+    --color-surface-container: #1e293b;
+    --color-surface-container-low: #1e293b;
+    --color-surface-container-high: #334155;
+
+    --color-text-primary: #f8fafc;
+    --color-text-secondary: #94a3b8;
+
+    --color-app-bg: #020617;
+    --color-error: #ffb4ab;
+  }
+
   body {
-    @apply bg-[#faf8ff] text-[#191b23] font-sans;
+    @apply bg-app-bg text-text-primary font-sans transition-colors duration-500;
   }
 }
 
+/* Utility Classes */
 .soft-shadow {
   box-shadow: 0 10px 40px -10px rgba(0, 74, 198, 0.08);
+}
+
+.dark .soft-shadow {
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.4);
 }
 
 .glass-card {
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(12px);
+}
+
+.dark .glass-card {
+  background: rgba(30, 41, 59, 0.7);
 }

@@ -17,6 +17,7 @@ interface UserContextType {
   adherenceScore: number;
   latestRiskLevel: string;
   latestRiskInsight: string;
+  updateUser: (name: string, phone: string, dob: string) => void; // ✅ New method
   // ✅ Caregiver Context
   activePatient: any | null;
   setActivePatient: (patient: any) => void;
@@ -84,6 +85,19 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('mp_latestRiskInsight', insight);
   };
 
+  // 2. Implement the updateUser function
+  const updateUser = (name: string, phone: string, dob: string) => {
+    // Update State (triggers instant UI re-render)
+    setUserName(name);
+    setUserPhone(phone);
+    setUserDob(dob);
+
+    // Update LocalStorage (persists on page refresh)
+    if (name) localStorage.setItem('mp_userName', name);
+    if (phone) localStorage.setItem('mp_userPhone', phone);
+    if (dob) localStorage.setItem('mp_userDob', dob);
+  };
+
   const login = (
     role: UserRole, id: string | number, status: LinkStatus, code: string | null, 
     name: string | null, email: string | null, phone: string | null, dob: string,
@@ -142,7 +156,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoggedIn, adherenceScore, latestRiskLevel, latestRiskInsight, activePatient,
       setRole: (r) => { setRoleState(r); if(r) localStorage.setItem('mp_role', r); },
       setLinkStatus: (s) => { setLinkStatusState(s); if(s) localStorage.setItem('mp_linkStatus', s); },
-      setAdherenceData, setActivePatient, login, logout
+      setAdherenceData, setActivePatient, login, logout, updateUser
     }}>
       {children}
     </UserContext.Provider>

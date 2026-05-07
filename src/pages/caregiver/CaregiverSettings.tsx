@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion'; // Changed from 'motion/react' to 'framer-motion' for standard naming
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     User, Mail, Phone, Shield,
     Bell, ShieldAlert, Users,
@@ -8,13 +8,15 @@ import {
     Activity, ArrowLeft, Key,
 } from 'lucide-react';
 import { useUser } from '../../context/UserContext';
+import { useMeds } from '../../context/MedicationContext'; // ✅ Use the same data source
 import { cn } from '../../utils/cn';
+import api from '../../utils/api';
 
 const CaregiverSettings: React.FC = () => {
-    // ✅ Destructure activePatient - this is now our single source of truth
     const { logout, userName, userEmail, userPhone, activePatient } = useUser();
+    const { aiInsights, refreshData } = useMeds(); // ✅ Destructure global AI insights
     const navigate = useNavigate();
-    
+
     const [showLogoutModal, setShowLogoutModal] = useState(false);
     const [notifications, setNotifications] = useState({
         emergency: true,
@@ -22,12 +24,27 @@ const CaregiverSettings: React.FC = () => {
         dailySummary: false,
     });
 
-    // ✅ Create a helper object to handle display logic and null safety
+    // 1. Sync Global Context with the selected Patient
+    useEffect(() => {
+        const syncPatientContext = async () => {
+            const rawId = activePatient?._id || activePatient?.id;
+            if (rawId) {
+                // Sanitize ID (remove trailing underscores)
+                const cleanId = rawId.replace(/[^a-fA-F0-9]/g, '');
+
+                // Fetch latest data for this specific patient into the context
+                await refreshData(cleanId);
+            }
+        };
+        syncPatientContext();
+    }, [activePatient, refreshData]);
+
+    // 2. Helper uses aiInsights from context for the "Single Source of Truth"
     const displayPatient = {
         name: activePatient?.name || "No Patient Selected",
         code: activePatient?.patientCode || "---",
-        adherence: activePatient?.adherenceRate || 0,
-        risk: activePatient?.riskLevel || "N/A"
+        adherence: aiInsights?.score ?? 0, // ✅ Live data from context
+        risk: aiInsights?.level ?? 'Stable' // ✅ Live data from context
     };
 
     const handleLogout = () => {
@@ -42,7 +59,7 @@ const CaregiverSettings: React.FC = () => {
     return (
         <div className="space-y-8 mt-4 pb-32 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 px-1">
                 <button
                     onClick={() => navigate(-1)}
                     className="p-2.5 rounded-2xl bg-white soft-shadow border border-gray-50 text-gray-400 hover:text-primary transition-all active:scale-95"
@@ -55,7 +72,7 @@ const CaregiverSettings: React.FC = () => {
                 </div>
             </div>
 
-            {/* 1. Caregiver Personal Profile Card */}
+            {/* 1. Caregiver Personal Profile Card (Static Data) */}
             <section className="bg-white rounded-[32px] p-8 soft-shadow border border-gray-50 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16"></div>
                 <div className="flex items-center gap-6 mb-8 relative z-10">
@@ -89,11 +106,11 @@ const CaregiverSettings: React.FC = () => {
                 </div>
             </section>
 
-            {/* 2. Linked Patient Information Card - UPDATED TO USE ACTIVE PATIENT */}
+            {/* 2. Linked Patient Information Card (Live AI Data) */}
             <section>
                 <div className="flex items-center justify-between mb-4 px-2">
                     <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Selected Patient</h2>
-                    <button 
+                    <button
                         onClick={() => navigate('/caregiver/hub')}
                         className="text-[10px] bg-primary/10 text-primary px-3 py-1 rounded-full font-bold uppercase tracking-wider hover:bg-primary hover:text-white transition-all"
                     >
@@ -129,8 +146,11 @@ const CaregiverSettings: React.FC = () => {
                                 <ShieldAlert className="w-4 h-4 text-white/70" />
                                 <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">Risk Level</span>
                             </div>
-                            <div className="inline-flex px-3 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider border bg-white/10 border-white/20">
-                                {displayPatient.risk} Risk
+                            <div className={cn(
+                                "inline-flex px-3 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider border",
+                                displayPatient.risk === 'Critical' ? "bg-red-500/20 border-red-500/30" : "bg-white/10 border-white/20"
+                            )}>
+                                {displayPatient.risk}
                             </div>
                         </div>
                     </div>
@@ -168,31 +188,38 @@ const CaregiverSettings: React.FC = () => {
             <section>
                 <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 px-2">Account & Security</h2>
                 <div className="bg-white rounded-[32px] overflow-hidden soft-shadow border border-gray-50">
-                    <button className="w-full flex items-center justify-between p-5 px-6 border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-primary">
-                                <Key className="w-5 h-5" />
-                            </div>
-                            <span className="text-sm font-bold text-text-primary">Change Password</span>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-gray-300" />
-                    </button>
-                    <button
+                    <motion.button
+                        // Use whileHover for the "pointer effect" and visual lift
+                        whileHover={{
+                            x: 4,
+                            backgroundColor: "rgba(239, 68, 68, 0.05)",
+                            boxShadow: "0 10px 15px -3px rgba(239, 68, 68, 0.1)" // Subtle red-tinted shadow
+                        }}
+                        whileTap={{ scale: 0.98 }}
                         onClick={() => setShowLogoutModal(true)}
-                        className="w-full flex items-center justify-between p-5 px-6 hover:bg-red-50/30 transition-colors"
+                        // Added cursor-pointer for explicit feedback
+                        className="w-full flex items-center justify-between p-5 px-6 transition-all group cursor-pointer"
                     >
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-2xl bg-red-50 flex items-center justify-center text-error">
+                            {/* Icon container pops on hover */}
+                            <div className="w-10 h-10 rounded-2xl bg-red-50 flex items-center justify-center text-error transition-transform group-hover:scale-110 group-active:scale-95">
                                 <LogOut className="w-5 h-5" />
                             </div>
-                            <span className="text-sm font-bold text-error">Logout Session</span>
+                            <span className="text-sm font-bold text-error">Logout</span>
                         </div>
-                        <ChevronRight className="w-5 h-5 text-gray-300" />
-                    </button>
+
+                        {/* Chevron slides slightly to the right */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black text-error/40 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-tighter">
+                                End Session
+                            </span>
+                            <ChevronRight className="w-5 h-5 text-gray-300 transition-transform group-hover:translate-x-1" />
+                        </div>
+                    </motion.button>
                 </div>
             </section>
 
-            {/* Logout Confirmation Modal */}
+            {/* Logout Modal */}
             <AnimatePresence>
                 {showLogoutModal && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">

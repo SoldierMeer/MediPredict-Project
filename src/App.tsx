@@ -6,8 +6,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider, useUser } from './context/UserContext';
+import { SettingsProvider, useSettings } from './context/SettingsContext'; // ✅ Added useSettings
 import { AnimatePresence } from 'motion/react';
 import ProtectedRoute from './components/ProtectedRoute';
+import { requestNotificationPermission } from './utils/notificationService';
 
 // Shared Pages
 import SplashScreen from './pages/shared/SplashScreen';
@@ -34,20 +36,27 @@ import LinkPatientScreen from './pages/caregiver/LinkPatientScreen';
 import AppLayout from './layouts/AppLayout';
 
 // Data & Context
-import { MASTER_MEDICATIONS } from './data/mockData';
+// import { MASTER_MEDICATIONS } from './data/mockData';
 import { MedicationProvider } from './context/MedicationContext';
 
 const AppRoutes = () => {
   const { role, isLoggedIn, activePatient } = useUser();
   const [showReminder, setShowReminder] = useState(false);
+  const { settings } = useSettings();
 
   // Demo: Show reminder after 15 seconds for logged-in patients
   useEffect(() => {
-    if (isLoggedIn && role === 'patient') {
+    // Only start the timer if the user is a patient AND reminders are enabled
+    if (isLoggedIn && role === 'patient' && settings.reminders) { 
       const timer = setTimeout(() => setShowReminder(true), 15000);
       return () => clearTimeout(timer);
     }
-  }, [isLoggedIn, role]);
+  }, [isLoggedIn, role, settings.reminders]);
+
+  useEffect(() => {
+    // Request permission on mount so we are ready for AI alerts
+    requestNotificationPermission();
+  }, []);
 
   return (
     <>
@@ -131,11 +140,13 @@ const AppRoutes = () => {
 export default function App() {
   return (
     <UserProvider>
+      <SettingsProvider>
       <MedicationProvider>
         <BrowserRouter>
           <AppRoutes />
         </BrowserRouter>
       </MedicationProvider>
+      </SettingsProvider>
     </UserProvider>
   );
 }
