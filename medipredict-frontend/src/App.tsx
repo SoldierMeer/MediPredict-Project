@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider, useUser } from './context/UserContext';
-import { SettingsProvider, useSettings } from './context/SettingsContext'; // ✅ Added useSettings
+import { SettingsProvider, useSettings } from './context/SettingsContext';
 import { AnimatePresence } from 'motion/react';
 import ProtectedRoute from './components/ProtectedRoute';
 import { requestNotificationPermission } from './utils/notificationService';
@@ -36,43 +36,39 @@ import LinkPatientScreen from './pages/caregiver/LinkPatientScreen';
 import AppLayout from './layouts/AppLayout';
 
 // Data & Context
-// import { MASTER_MEDICATIONS } from './data/mockData';
-import { MedicationProvider } from './context/MedicationContext';
+import { MedicationProvider, useMeds } from './context/MedicationContext'; // ✅ Corrected import
 
 const AppRoutes = () => {
   const { role, isLoggedIn, activePatient } = useUser();
   const [showReminder, setShowReminder] = useState(false);
   const { settings } = useSettings();
+  const { medications } = useMeds(); // ✅ Fixed: useMeds instead of Medications
 
   // Demo: Show reminder after 15 seconds for logged-in patients
   useEffect(() => {
-    // Only start the timer if the user is a patient AND reminders are enabled
-    if (isLoggedIn && role === 'patient' && settings.reminders) { 
+    // Only start the timer if user is patient, reminders are ON, AND meds exist
+    if (isLoggedIn && role === 'patient' && settings.reminders && medications.length > 0) { 
       const timer = setTimeout(() => setShowReminder(true), 15000);
       return () => clearTimeout(timer);
     }
-  }, [isLoggedIn, role, settings.reminders]);
+  }, [isLoggedIn, role, settings.reminders, medications]);
 
   useEffect(() => {
-    // Request permission on mount so we are ready for AI alerts
     requestNotificationPermission();
   }, []);
 
   return (
     <>
       <Routes>
-        {/* --- Public Routes --- */}
         <Route path="/splash" element={<SplashScreen />} />
         <Route path="/login" element={<LoginScreen />} />
         
-        {/* --- Role Selection (Requires Auth) --- */}
         <Route path="/select-role" element={
           <ProtectedRoute>
             <SelectRoleScreen />
           </ProtectedRoute>
         } />
 
-        {/* --- Patient Flow --- */}
         <Route path="/patient" element={
           <ProtectedRoute roleRequired="patient">
             <AppLayout title="MediPredict" />
@@ -87,19 +83,16 @@ const AppRoutes = () => {
           <Route path="settings" element={<PatientSettings />} />
         </Route>
 
-        {/* --- Caregiver Flow --- */}
         <Route path="/caregiver" element={
           <ProtectedRoute roleRequired="caregiver">
             <AppLayout title="CarePulse" />
           </ProtectedRoute>
         }>
-          {/* Landing Zone */}
           <Route index element={<Navigate to="hub" replace />} />
           <Route path="hub" element={<PatientHub />} />
           <Route path="link-patient" element={<LinkPatientScreen />} />
           <Route path="settings" element={<CaregiverSettings />} />
 
-          {/* Patient-Specific Data (Requires activePatient selection) */}
           <Route 
             path="dashboard" 
             element={activePatient ? <CaregiverDashboard /> : <Navigate to="/caregiver/hub" replace />} 
@@ -118,16 +111,15 @@ const AppRoutes = () => {
           />
         </Route>
 
-        {/* --- Fallback Redirects --- */}
         <Route path="/" element={<Navigate to="/splash" replace />} />
         <Route path="*" element={<Navigate to="/splash" replace />} />
       </Routes>
 
-      {/* --- Global UI Components --- */}
       <AnimatePresence>
-        {isLoggedIn && showReminder && (
+        {/* ✅ Safety check: ensure medications[0] exists before rendering */}
+        {isLoggedIn && showReminder && medications.length > 0 && (
           <ReminderPopup
-            medication={MASTER_MEDICATIONS[0]}
+            medication={medications[0]} 
             onClose={() => setShowReminder(false)}
             onTake={() => setShowReminder(false)}
           />
@@ -141,11 +133,11 @@ export default function App() {
   return (
     <UserProvider>
       <SettingsProvider>
-      <MedicationProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </MedicationProvider>
+        <MedicationProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </MedicationProvider>
       </SettingsProvider>
     </UserProvider>
   );

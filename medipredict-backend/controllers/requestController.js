@@ -49,7 +49,8 @@ export const sendRequest = async (req, res) => {
         patientId: patient._id,
         caregiverId,
         caregiverName, 
-        status: 'pending'
+        status: 'pending',
+        type: 'link'
       });
   
       await newRequest.save();
@@ -64,60 +65,66 @@ export const sendRequest = async (req, res) => {
 
 // 2. Patient fetches their pending requests
 // GET /api/requests/:userId
-export const getPendingRequests = async (req, res) => {
-  try {
-    // ✅ FIX: Use req.user._id instead of req.params.userId for security
-    const requests = await Request.find({ 
-      patientId: req.user._id, 
-      status: 'pending' 
-    });
-    res.json(requests);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
+// export const getLinkedCaregiver = async (req, res) => {
+//   try {
+//     // Find requests where the current user is the patient and status is 'accepted'
+//     const relationship = await Request.find({ 
+//       patientId: req.user.id, 
+//       status: 'accepted' 
+//     }).populate('caregiverId', 'name email phoneNumber role'); // Join with User data
+
+//     // Always send a 200, even if the array is empty
+//     res.status(200).json(relationship.map(r => r.caregiverId)); 
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Error fetching caregiver info" });
+//   }
+// };
 
 // 3. Patient accepts or rejects a request
 // PATCH /api/requests/:requestId
 // backend/controllers/requestController.js
 
+
+
 export const updateRequestStatus = async (req, res) => {
-  const { requestId } = req.params;
-  const { status } = req.body;
-
   try {
+    const { requestId } = req.params;
+    const { status } = req.body;
+
+    // 1. Find the request and populate IDs to ensure they exist
     const request = await Request.findById(requestId);
-    if (!request) return res.status(404).json({ message: "Request not found" });
-
-    if (status === 'accepted' && request.type === 'link') {
-      // ✅ 1. PREVENT DUPLICATES: Check if this specific link already exists
-      const existingLink = await Link.findOne({
-        patientId: request.patientId,
-        caregiverId: request.caregiverId
-      });
-
-      if (existingLink) {
-        // If it exists, just update the request status and don't create a new link
-        request.status = 'accepted';
-        await request.save();
-        return res.status(200).json({ message: "Caregiver already linked." });
-      }
-
-      // ✅ 2. Only create a new link if it DOESN'T exist
-      const newLink = new Link({
-        patientId: request.patientId,
-        caregiverId: request.caregiverId
-      });
-      await newLink.save();
+    if (!request) {
+      return res.status(404).json({ message: "Request link not found" });
     }
 
-    // Update the request status normally
+    // 2. Update the Request status (accepted/rejected)
     request.status = status;
     await request.save();
 
-    res.status(200).json({ message: `Request ${status}` });
+    // 3. Logic for 'accepted': Link the Patient and Caregiver records
+    if (status === 'accepted') {
+      // Add Caregiver to Patient's circle
+      await User.findByIdAndUpdate(request.patientId, {
+        $addToSet: { linkedCaregivers: request.caregiverId } 
+      });
+
+      // Add Patient to Caregiver's dashboard
+      await User.findByIdAndUpdate(request.caregiverId, {
+        $addToSet: { linkedPatients: request.patientId }
+      });
+    }
+
+    res.status(200).json({ 
+      message: `Request ${status} successfully`, 
+      request 
+    });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("❌ Update Status Error:", error.message);
+    res.status(500).json({ 
+      message: "Internal Server Error", 
+      error: error.message 
+    });
   }
 };
 
@@ -188,27 +195,36 @@ export const checkLinkStatus = async (req, res) => {
   // 5. Patient fetches their linked caregiver's info
   // controllers/requestController.js
 
-export const getLinkedCaregiver = async (req, res) => {
-  try {
-    const patientId = req.user._id;
-
-    // ✅ Change findOne to find to get ALL caregivers
-    const links = await Request.find({ 
-      patientId, 
-      status: 'accepted' 
-    }).populate('caregiverId', 'name email phoneNumber role'); 
-
-    if (!links || links.length === 0) {
-      return res.status(404).json({ message: "No linked caregivers found" });
+  export const getLinkedCaregiver = async (req, res) => {
+    try {
+      // Find requests where the current user is the patient and status is 'accepted'
+      const relationship = await Request.find({ 
+        patientId: req.user.id, 
+        status: 'accepted' 
+      }).populate('caregiverId', 'name email phoneNumber role'); // Join with User data
+  
+      // Always send a 200, even if the array is empty
+      res.status(200).json(relationship.map(r => r.caregiverId)); 
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "Error fetching caregiver info" });
     }
+  };
 
-    // ✅ Map to return an array of caregiver objects
-    const caregivers = links.map(link => link.caregiverId);
-    res.json(caregivers); 
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
+  export const getPendingRequests = async (req, res) => {
+    try {
+      const { userId } = req.params;
+      
+      const requests = await Request.find({ 
+        patientId: userId, 
+        status: 'pending' 
+      }).populate('caregiverId', 'name'); // 👈 CRITICAL: This pulls the caregiver's name!
+  
+      res.status(200).json(requests);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching pending requests" });
+    }
+  };
 
 // backend/controllers/requestController.js
 

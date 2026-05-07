@@ -1,17 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
 import { useUser } from './UserContext';
-import axios from 'axios'; // Add this at the top
-
-
-// ✅ Define the robust Medication interface here to include MongoDB properties
-// frontend/src/context/MedicationContext.tsx
-
-// frontend/src/context/MedicationContext.tsx
+import axios from 'axios';
 
 export interface Medication {
-  _id: string;            // ✅ Added for MongoDB compatibility
-  id: string;             // ✅ Added for frontend mapping
+  _id: string;
+  id: string; // Used for frontend mapping
   patientId: string;
   name: string;
   dosage: string;
@@ -22,9 +16,9 @@ export interface Medication {
   status: 'upcoming' | 'taken' | 'missed' | 'late';
   isTaken: boolean;
   lastTakenDate: string | null;
-  snoozeCount: number;    // ✅ Added
-  snoozeUntil: string | null; // ✅ Added
-  isArchived: boolean;    // ✅ Added
+  snoozeCount: number;
+  snoozeUntil: string | null;
+  isArchived: boolean;
   selectedDays?: string[]; 
 }
 
@@ -46,7 +40,7 @@ interface MedicationContextType {
     score: number;
     confidence?: number;
   } | null;
-  fetchAIInsights: (patientId: string, silent?: boolean) => Promise<void>;
+  fetchAIInsights: (patientId: string, silent?: boolean, signal?: AbortSignal) => Promise<void>;
 }
 
 const MedicationContext = createContext<MedicationContextType | undefined>(undefined);
@@ -71,7 +65,6 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       else setIsSyncing(true);
 
       const res = await api.get(`/medications/patient/${targetId}`);
-      // ✅ Mapping both _id and id ensures compatibility across your components
       const formattedMeds = res.data.map((m: any) => ({ 
         ...m, 
         id: m._id 
@@ -87,8 +80,6 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const fetchAdherenceHistory = useCallback(async (patientId: string, silent = false) => {
     if (!patientId) return;
-    
-    // ✅ Sanitize ID: Remove any non-alphanumeric characters like trailing underscores
     const cleanId = patientId.replace(/[^a-zA-Z0-9]/g, '');
   
     try {
@@ -106,11 +97,9 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!patientId) return;
     try {
       if (!silent) setIsLoading(true);
-      // ✅ Pass the signal to Axios
       const res = await api.get(`/medications/ai-insights/${patientId}`, { signal });
       setAiInsights(res.data);
     } catch (err) {
-      // ✅ Ignore cancellation errors in the console
       if (axios.isCancel(err)) return; 
       console.error("AI Insight fetch failed:", err);
     } finally {
@@ -149,19 +138,17 @@ export const MedicationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const targetId = role === 'caregiver' ? activePatient?._id : userId;
     
     if (targetId) {
-      const controller = new AbortController(); // ✅ Create controller
-      
+      const controller = new AbortController();
       fetchMeds(true);
-      // ✅ Pass the signal
       fetchAIInsights(targetId, true, controller.signal); 
       fetchAdherenceHistory(targetId, true);
   
       const interval = setInterval(() => {
         fetchMeds(false);
-      }, 5000); 
+      }, 10000); // Polling every 10s
   
       return () => {
-        controller.abort(); // ✅ Cancel pending request on unmount
+        controller.abort();
         clearInterval(interval);
       };
     }

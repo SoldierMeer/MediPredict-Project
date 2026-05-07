@@ -95,7 +95,7 @@ const PendingRequests: React.FC<{ userId: string | null }> = ({ userId }) => {
                   </h4>
                   <p className="text-sm font-bold text-text-primary leading-tight">
                     {/* ✅ Show custom message for reminders, or name for links */}
-                    {isLink ? `${req.caregiverName} wants to link` : req.message}
+                    {(req.caregiverId as any)?.name || "New Caregiver"} wants to link
                   </p>
                 </div>
               </div>

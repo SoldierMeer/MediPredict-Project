@@ -15,8 +15,10 @@ const app = express();
 // Middleware
 app.use(cors({
   origin: [
-    "https://medipredict-app-iota.vercel.app", // 👈 The URL from your screenshot
-    "http://localhost:5173"
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:5173",
+    "https://medipredict-app-iota.vercel.app" // Keep this for when you go back to prod
   ],
   credentials: true
 }));
